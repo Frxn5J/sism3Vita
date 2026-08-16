@@ -1,4 +1,42 @@
-<h1 align="center"><img alt="SoLoBoP" src="https://raw.githubusercontent.com/gist/v-atamanenko/e547f3f0667e4684ca665b11a7ce1e3c/raw/6dd7ce900576ae334cda1886095c09a784663507/solobop_logo.svg"></h1>
+# The Sims 3 Vita
+
+Experimental PlayStation Vita port based on `soloader-boilerplate`.
+
+## Current Status
+
+- Target library: `libthesims3.so` from an ARM `armeabi` APK.
+- The library declares ARMv5T and uses the Marmalade `s3e` engine.
+- A diagnostic VPK builds with VitaSDK-softfp.
+- Runtime work is still required: `libshacccg.suprx`, unresolved imports, JNI mappings and Marmalade lifecycle calls.
+- The proprietary APK, extracted library and game assets are intentionally not included.
+
+The initial runtime test reached SO relocation and import resolution. Vita3K then required `libshacccg.suprx` and reported unresolved symbols including `tzname`, `uname`, `mprotect`, `statfs`, several pthread functions and ARM EABI helpers.
+
+## Build
+
+Use the Windows setup repository first:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File C:\vita-dev\build-port.ps1 C:\vita-dev\ports\the-sims-3 -Toolchain softfp -BuildType Debug
+```
+
+The diagnostic output is written to `C:\vita-dev\analysis\builds\the-sims-3-softfp\the_sims_3.vpk`.
+
+## Runtime Data
+
+Copy the target library and extracted APK assets to:
+
+```text
+ux0:data/thesims3/libthesims3.so
+ux0:data/thesims3/assets/
+```
+
+The target-specific Title ID is `TS3D00001`, chosen to avoid an existing `TSIM00001` installation.
+
+## License and Inputs
+
+This repository contains port scaffolding and source changes only. Do not commit APKs, firmware modules, decrypted system files, proprietary assets or generated VPKs.
+
 <p align="center">
   <a href="#what-is-this">What is this</a> •
   <a href="#prerequisites">Prerequisites</a> •

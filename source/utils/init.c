@@ -29,7 +29,7 @@
 #include <fios/fios.h>
 
 // Base address for the Android .so to be loaded at
-#define LOAD_ADDRESS 0x98000000
+#define LOAD_ADDRESS 0x88000000
 
 extern so_module so_mod;
 

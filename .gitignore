@@ -4,3 +4,17 @@ build/*
 cmake-build-*/
 lib/libc_bridge/out/
 apk/
+
+# Local build and Vita package outputs
+*.vpk
+*.velf
+*.self
+*.suprx
+
+# Proprietary game inputs and staged runtime data
+analysis/
+data/
+assets/
+*.apk
+*.aab
+*.obb
