@@ -380,6 +380,13 @@ pthread_t pthread_self_soloader()
     return pthread_self();
 }
 
+int pthread_attr_setstack_soloader(pthread_attr_t_bionic *attr, void *stackaddr, size_t stacksize) {
+    if (!attr) return -1;
+    _attr_t_static_init(attr);
+    (void)stackaddr;
+    return pthread_attr_setstacksize(attr->real_ptr, stacksize);
+}
+
 int pthread_once_soloader(volatile int *once_control, void (*init_routine)(void)) {
     if (!once_control || !init_routine)
         return -1;

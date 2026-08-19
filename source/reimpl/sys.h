@@ -55,6 +55,10 @@ int setenv_soloader(const char * name, const char * value, int overwrite);
 
 int getpagesize(void);
 
+int mprotect_soloader(void *addr, size_t len, int prot);
+int statfs_soloader(const char *path, void *buf);
+int uname_soloader(void *buf);
+
 #ifdef __cplusplus
 };
 #endif

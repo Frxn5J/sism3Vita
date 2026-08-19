@@ -86,19 +86,31 @@ extern void *_Znwj;
 extern void *__aeabi_atexit;
 extern void *__aeabi_d2lz;
 extern void *__aeabi_d2ulz;
+extern void *__aeabi_d2f;
+extern void *__aeabi_d2iz;
 extern void *__aeabi_dadd;
+extern void *__aeabi_dcmpeq;
 extern void *__aeabi_dcmpgt;
 extern void *__aeabi_dcmplt;
 extern void *__aeabi_ddiv;
 extern void *__aeabi_dmul;
+extern void *__aeabi_dsub;
+extern void *__aeabi_f2d;
+extern void *__aeabi_f2iz;
+extern void *__aeabi_fadd;
+extern void *__aeabi_fcmpge;
+extern void *__aeabi_fmul;
+extern void *__aeabi_fsub;
 extern void *__aeabi_f2lz;
 extern void *__aeabi_f2ulz;
 extern void *__aeabi_i2d;
+extern void *__aeabi_i2f;
 extern void *__aeabi_idiv;
 extern void *__aeabi_idivmod;
 extern void *__aeabi_l2d;
 extern void *__aeabi_l2f;
 extern void *__aeabi_ldivmod;
+extern void *__aeabi_lmul;
 extern void *__aeabi_memclr;
 extern void *__aeabi_memcpy;
 extern void *__aeabi_memmove;
@@ -149,21 +161,33 @@ so_default_dynlib default_dynlib[] = {
         { "_Znaj", (uintptr_t)&_Znaj },
         { "_Znwj", (uintptr_t)&_Znwj },
         { "__aeabi_atexit", (uintptr_t)&__aeabi_atexit },
+        { "__aeabi_d2f", (uintptr_t)&__aeabi_d2f },
+        { "__aeabi_d2iz", (uintptr_t)&__aeabi_d2iz },
         { "__aeabi_d2lz", (uintptr_t)&__aeabi_d2lz },
         { "__aeabi_d2ulz", (uintptr_t)&__aeabi_d2ulz },
         { "__aeabi_dadd", (uintptr_t)&__aeabi_dadd },
+        { "__aeabi_dcmpeq", (uintptr_t)&__aeabi_dcmpeq },
         { "__aeabi_dcmpgt", (uintptr_t)&__aeabi_dcmpgt },
         { "__aeabi_dcmplt", (uintptr_t)&__aeabi_dcmplt },
         { "__aeabi_ddiv", (uintptr_t)&__aeabi_ddiv },
         { "__aeabi_dmul", (uintptr_t)&__aeabi_dmul },
+        { "__aeabi_dsub", (uintptr_t)&__aeabi_dsub },
+        { "__aeabi_f2d", (uintptr_t)&__aeabi_f2d },
+        { "__aeabi_f2iz", (uintptr_t)&__aeabi_f2iz },
+        { "__aeabi_fadd", (uintptr_t)&__aeabi_fadd },
+        { "__aeabi_fcmpge", (uintptr_t)&__aeabi_fcmpge },
+        { "__aeabi_fmul", (uintptr_t)&__aeabi_fmul },
+        { "__aeabi_fsub", (uintptr_t)&__aeabi_fsub },
         { "__aeabi_f2lz", (uintptr_t)&__aeabi_f2lz },
         { "__aeabi_f2ulz", (uintptr_t)&__aeabi_f2ulz },
         { "__aeabi_i2d", (uintptr_t)&__aeabi_i2d },
+        { "__aeabi_i2f", (uintptr_t)&__aeabi_i2f },
         { "__aeabi_idiv", (uintptr_t)&__aeabi_idiv },
         { "__aeabi_idivmod", (uintptr_t)&__aeabi_idivmod },
         { "__aeabi_l2d", (uintptr_t)&__aeabi_l2d },
         { "__aeabi_l2f", (uintptr_t)&__aeabi_l2f },
         { "__aeabi_ldivmod", (uintptr_t)&__aeabi_ldivmod },
+        { "__aeabi_lmul", (uintptr_t)&__aeabi_lmul },
         { "__aeabi_memclr", (uintptr_t)&__aeabi_memclr },
         { "__aeabi_memclr4", (uintptr_t)&__aeabi_memclr },
         { "__aeabi_memclr8", (uintptr_t)&__aeabi_memclr },
@@ -840,6 +864,7 @@ so_default_dynlib default_dynlib[] = {
         { "pthread_attr_destroy", (uintptr_t)&pthread_attr_destroy_soloader },
         { "pthread_attr_init", (uintptr_t) &pthread_attr_init_soloader },
         { "pthread_attr_setdetachstate", (uintptr_t) &pthread_attr_setdetachstate_soloader },
+        { "pthread_attr_setstack", (uintptr_t) &pthread_attr_setstack_soloader },
         { "pthread_attr_setstacksize", (uintptr_t) &pthread_attr_setstacksize_soloader },
         { "pthread_attr_setschedparam", (uintptr_t) &ret0 },
 
@@ -990,10 +1015,13 @@ so_default_dynlib default_dynlib[] = {
         { "fork", (uintptr_t)&fork },
         { "getpagesize", (uintptr_t)&getpagesize },
         { "getpid", (uintptr_t)&getpid },
+        { "mprotect", (uintptr_t)&mprotect_soloader },
         { "sbrk", (uintptr_t)&sbrk },
+        { "statfs", (uintptr_t)&statfs_soloader },
         { "syscall", (uintptr_t)&syscall },
         { "sysconf", (uintptr_t)&ret0 },
         { "system", (uintptr_t)&system },
+        { "uname", (uintptr_t)&uname_soloader },
         { "waitpid", (uintptr_t)&ret0 },
 
 
@@ -1022,6 +1050,7 @@ so_default_dynlib default_dynlib[] = {
         { "mktemp", (uintptr_t)&mktemp },
         { "tmpfile", (uintptr_t)&tmpfile },
         { "tmpnam", (uintptr_t)&tmpnam },
+        { "tzname", (uintptr_t)&tzname },
 
 
         // stdlib
@@ -1030,6 +1059,7 @@ so_default_dynlib default_dynlib[] = {
         { "atoi", (uintptr_t)&atoi },
         { "atol", (uintptr_t)&atol },
         { "atoll", (uintptr_t)&atoll },
+        { "atexit", (uintptr_t)&atexit },
         { "bsearch", (uintptr_t)&bsearch },
         { "exit", (uintptr_t)&exit_soloader },
         { "lrand48", (uintptr_t)&lrand48 },

@@ -149,3 +149,28 @@ int setenv_soloader(const char * name, const char * value, int overwrite) {
 int getpagesize(void) {
     return PAGE_SIZE;
 }
+
+int mprotect_soloader(void *addr, size_t len, int prot) {
+    (void)addr; (void)len; (void)prot;
+    l_warn("mprotect(%p, %zu, 0x%x): stub -> 0", addr, len, prot);
+    return 0;
+}
+
+int statfs_soloader(const char *path, void *buf) {
+    l_warn("statfs(%s): not implemented -> -1", path);
+    if (buf) memset(buf, 0, 64);
+    return -1;
+}
+
+int uname_soloader(void *buf) {
+    l_warn("uname: stub -> filling linux-like utsname");
+    if (!buf) return -1;
+    struct { char sysname[65]; char nodename[65]; char release[65]; char version[65]; char machine[65]; char domainname[65]; } *u = buf;
+    memset(u, 0, sizeof(*u));
+    strncpy(u->sysname, "Linux", sizeof(u->sysname)-1);
+    strncpy(u->nodename, "psvita", sizeof(u->nodename)-1);
+    strncpy(u->release, "3.10.0", sizeof(u->release)-1);
+    strncpy(u->version, "#1", sizeof(u->version)-1);
+    strncpy(u->machine, "armv7l", sizeof(u->machine)-1);
+    return 0;
+}
