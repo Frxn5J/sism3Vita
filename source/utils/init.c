@@ -22,6 +22,7 @@
 #include <psp2/appmgr.h>
 #include <psp2/apputil.h>
 #include <psp2/kernel/clib.h>
+#include <psp2/io/stat.h>
 #include <psp2/power.h>
 
 #include <falso_jni/FalsoJNI.h>
@@ -67,11 +68,21 @@ void soloader_init_all() {
         fatal_error("Looks like you haven't installed the data files for this "
                     "port, or they are in an incorrect location. Please make "
                     "sure that you have %s file exactly at that path.", SO_PATH);
+    } else {
+        SceIoStat _st; sceIoGetstat(SO_PATH, &_st);
+        l_info("SO file found: %s size=%d", SO_PATH, (int)_st.st_size);
     }
 
-    if (so_file_load(&so_mod, SO_PATH, LOAD_ADDRESS) < 0) {
-        l_fatal("SO could not be loaded.");
-        fatal_error("Error: could not load %s.", SO_PATH);
+    int _so_ret = so_file_load(&so_mod, SO_PATH, LOAD_ADDRESS);
+    if (_so_ret < 0) {
+        l_fatal("SO could not be loaded: ret=0x%x", _so_ret);
+        if (_so_ret == (int)0x80010002) {
+            fatal_error("Error: could not load %s.\nFile not found (check ux0:data/thesims3/).", SO_PATH);
+        } else if (_so_ret == (int)0x80010005) {
+            fatal_error("Error: could not load %s.\nMemory alloc failed. Free RAM/close apps.\nRet=0x80010005", SO_PATH);
+        } else {
+            fatal_error("Error: could not load %s.\nRet=0x%x\nCheck size=531164 and SHA E212AA...D19.", SO_PATH, _so_ret);
+        }
     }
 
     settings_load();
