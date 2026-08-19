@@ -11,9 +11,15 @@ endif()
 project(SceLibcBridge)
 include("${VITASDK}/share/vita.cmake" REQUIRED)
 
+if(DEFINED ENV{VITASDK})
+    set(_VITA_LIBS_GEN "$ENV{VITASDK}/bin/vita-libs-gen")
+else()
+    set(_VITA_LIBS_GEN "${VITASDK}/bin/vita-libs-gen")
+endif()
 add_custom_target(SceLibcBridge ALL
-        COMMAND vita-libs-gen ${CMAKE_CURRENT_SOURCE_DIR}/nids.yml ${CMAKE_CURRENT_BINARY_DIR}/stubs
+        COMMAND ${_VITA_LIBS_GEN} ${CMAKE_CURRENT_SOURCE_DIR}/nids.yml ${CMAKE_CURRENT_BINARY_DIR}/stubs
         COMMAND make -C ${CMAKE_CURRENT_BINARY_DIR}/stubs
+        BYPRODUCTS ${CMAKE_CURRENT_BINARY_DIR}/stubs/libSceLibcBridge_stub.a ${CMAKE_CURRENT_BINARY_DIR}/stubs/libSceLibcBridge_stub_weak.a
         COMMENT "Building stubs for SceLibcBridge"
 )
 
