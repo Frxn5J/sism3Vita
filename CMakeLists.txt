@@ -15,7 +15,7 @@ set(VITA_APP_NAME "The Sims 3")
 set(VITA_TITLEID "TS3D00001")
 set(VITA_VPKNAME "the_sims_3")
 set(VITA_VERSION "01.00")
-set(VITA_MKSFOEX_FLAGS "-d ATTRIBUTE2=12")
+set(VITA_MKSFOEX_FLAGS "-d ATTRIBUTE2=12 -d ATTRIBUTE=0x80")
 
 # Optional: used for "send" and "dump" targets
 set(PSVITAIP "192.168.0.198" CACHE STRING "PSVita IP (for FTP access)")
