@@ -61,8 +61,8 @@ endif()
 # Unique debug definition for loader's logging to not interfere with anything
 if (CMAKE_BUILD_TYPE STREQUAL "Debug")
   add_definitions(-DDEBUG_SOLOADER)
-  # Uncomment this for verbose FalsoJNI logging:
-  #add_definitions(-DFALSOJNI_DEBUGLEVEL=0)
+  # Keep JNI call tracing enabled in diagnostic builds.
+  add_definitions(-DFALSOJNI_DEBUGLEVEL=0)
   # Uncomment this for OpenGL logging:
   #add_definitions(-DDEBUG_OPENGL)
   # Uncomment this for so_util logging:

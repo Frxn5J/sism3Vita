@@ -27,6 +27,9 @@ extern "C"
 #endif
 
 #define SCE_KERNEL_MEMBLOCK_TYPE_USER_RX (0x0C20D050)
+#define MARMALADE_CACHEFLUSH_OFFSET       0x2d844
+#define MARMALADE_CODE_ALLOC_OFFSET       0x4f9c8
+#define MARMALADE_CODE_FREE_OFFSET        0x4f234
 
 #include "utils/logger.h"
 #include "utils/dialog.h"
@@ -45,10 +48,14 @@ void kuser_patch(void) {
 	opt.field_C = (SceUInt32)0x9A000000;
 	if (kuKernelAllocMemBlock("atomic", SCE_KERNEL_MEMBLOCK_TYPE_USER_RX, 0x1000, &opt) < 0)
 		fatal_error("Error could not allocate atomic block.");
-	kuKernelMemProtect((void *)0x9A000000, (SceSize)0x1000, KU_KERNEL_PROT_EXEC | KU_KERNEL_PROT_READ | KU_KERNEL_PROT_WRITE);
+	int ret = kuKernelMemProtect((void *)0x9A000000, (SceSize)0x1000,
+		KU_KERNEL_PROT_EXEC | KU_KERNEL_PROT_READ | KU_KERNEL_PROT_WRITE);
+	if (ret < 0)
+		fatal_error("Could not protect atomic helpers: 0x%x", ret);
 
 	hook_addr(0x9A000FA0, (uintptr_t)__kuser_memory_barrier);
 	hook_addr(0x9A000FC0, (uintptr_t)__atomic_cmpxchg);
+	kuKernelFlushCaches((void *)0x9A000000, 0x1000);
 
 	uint32_t patched_addr;
 	for (uint32_t addr = so_mod.text_base; addr < so_mod.text_base + so_mod.text_size; addr += 4) {
@@ -66,8 +73,31 @@ void kuser_patch(void) {
 	}
 }
 
+static void marmalade_cacheflush(void *start, size_t length) {
+	// This Marmalade wrapper takes a byte count, not GCC's end pointer.
+	if (!length) return;
+	if (!start || (uintptr_t)start > UINTPTR_MAX - 31 ||
+	    length > UINTPTR_MAX - (uintptr_t)start - 31)
+		fatal_error("Invalid Marmalade cache range: %p + 0x%x", start, length);
+	kuKernelFlushCaches(start, length);
+	l_info("Marmalade code caches synchronized: %p + 0x%x", start, length);
+}
+
 void so_patch(void) {
+	if (*(uint16_t *)(so_mod.load_addr + MARMALADE_CACHEFLUSH_OFFSET) != 0xb590 ||
+	    *(uint16_t *)(so_mod.load_addr + MARMALADE_CODE_ALLOC_OFFSET) != 0xb538 ||
+	    *(uint16_t *)(so_mod.load_addr + MARMALADE_CODE_FREE_OFFSET) != 0xb508)
+		fatal_error("Unsupported Marmalade library: code hook signatures differ.");
 	kuser_patch();
+	// The Android library contains __clear_cache(), which invokes the
+	// Android-only cacheflush syscall (SVC 0, r7 = 0xf0002).
+	hook_addr(so_mod.load_addr + MARMALADE_CACHEFLUSH_OFFSET + 1,
+	          (uintptr_t)marmalade_cacheflush);
+	// Pair the image allocator and release, leaving guarded stack/heap allocations alone.
+	hook_addr(so_mod.load_addr + MARMALADE_CODE_ALLOC_OFFSET + 1,
+	          (uintptr_t)marmalade_code_alloc);
+	hook_addr(so_mod.load_addr + MARMALADE_CODE_FREE_OFFSET + 1,
+	          (uintptr_t)marmalade_code_free);
 	// Sample hook with symbol name
 	// hook_addr((uintptr_t)so_symbol(&so_mod, "_ZN6glitch2os7Printer5printEPKcz"), (uintptr_t)&hookedFunction);
 	// Or with offset

@@ -3,6 +3,7 @@
 #include "utils/glutil.h"
 #include "utils/logger.h"
 #include "utils/utils.h"
+#include "java.h"
 
 #include <psp2/kernel/threadmgr.h>
 
@@ -25,21 +26,28 @@ so_module so_mod;
 
 #define MARMALADE_INIT_NATIVE_OFFSET     0x2e37d
 #define MARMALADE_SET_VIEW_NATIVE_OFFSET 0x2dc81
+#define MARMALADE_SET_PIXELS_NATIVE_OFFSET 0x2dae9
 #define MARMALADE_RUN_NATIVE_OFFSET      0x2ddd1
 #define PACKAGE_RESOURCE_PATH            DATA_PATH "The-Sims-3_1.5.21.apk"
 
 typedef void (*marmalade_init_native_fn)(JNIEnv *env, jobject loader_thread);
 typedef void (*marmalade_set_view_native_fn)(JNIEnv *env, jobject loader_thread,
                                               jobject loader_view);
+typedef void (*marmalade_set_pixels_native_fn)(JNIEnv *env, jobject loader_view,
+                                              jint width, jint height,
+                                              jintArray pixels);
 typedef void (*marmalade_run_native_fn)(JNIEnv *env, jobject loader_thread,
                                         jstring file_root, jstring package_path);
 
 static uintptr_t marmalade_entry(uintptr_t offset) {
-    if (offset >= so_mod.text_size) {
+    uintptr_t text_offset = so_mod.text_base - so_mod.load_addr;
+    if (offset < text_offset || offset >= text_offset + so_mod.text_size) {
         fatal_error("Invalid Marmalade entry offset: 0x%x", offset);
     }
 
-    return so_mod.text_base + offset;
+    // The offsets come from the ELF virtual address space, like st_value in
+    // so_symbol(), so they must be based at load_addr rather than text_base.
+    return so_mod.load_addr + offset;
 }
 
 
@@ -67,8 +75,14 @@ int main() {
         (void *)marmalade_entry(MARMALADE_INIT_NATIVE_OFFSET);
     marmalade_set_view_native_fn set_view_native =
         (void *)marmalade_entry(MARMALADE_SET_VIEW_NATIVE_OFFSET);
+    marmalade_set_pixels_native_fn set_pixels_native =
+        (void *)marmalade_entry(MARMALADE_SET_PIXELS_NATIVE_OFFSET);
     marmalade_run_native_fn run_native =
         (void *)marmalade_entry(MARMALADE_RUN_NATIVE_OFFSET);
+
+    l_info("Marmalade entry points: init=0x%x view=0x%x run=0x%x",
+           (unsigned int)init_native, (unsigned int)set_view_native,
+           (unsigned int)run_native);
 
     jobject loader_thread = (jobject)0x42424242;
     jobject loader_view = (jobject)0x69696969;
@@ -79,7 +93,13 @@ int main() {
 
     l_info("Initializing Marmalade JNI bindings.");
     init_native(&jni, loader_thread);
+    l_info("Marmalade JNI bindings initialized.");
+    jintArray pixels = java_surface_init(JAVA_SURFACE_WIDTH, JAVA_SURFACE_HEIGHT);
+    set_pixels_native(&jni, loader_view, JAVA_SURFACE_WIDTH, JAVA_SURFACE_HEIGHT,
+                      pixels);
+    l_info("Marmalade software pixels registered through setPixelsNative.");
     set_view_native(&jni, loader_thread, loader_view);
+    l_info("Marmalade view configured.");
 
     jstring file_root = jni->NewStringUTF(&jni, DATA_PATH);
     jstring package_path = jni->NewStringUTF(&jni, PACKAGE_RESOURCE_PATH);

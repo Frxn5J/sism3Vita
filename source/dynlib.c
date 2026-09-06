@@ -691,6 +691,7 @@ so_default_dynlib default_dynlib[] = {
         { "glGetActiveAttrib", (uintptr_t)&glGetActiveAttrib },
         { "glGetActiveUniform", (uintptr_t)&glGetActiveUniform },
         { "glGetAttribLocation", (uintptr_t)&glGetAttribLocation },
+        { "glGetAttachedShaders", (uintptr_t)&glGetAttachedShaders },
         { "glGetBooleanv", (uintptr_t)&glGetBooleanv },
         { "glGetBufferParameteriv", (uintptr_t)&glGetBufferParameteriv },
         { "glGetBufferPointervOES", (uintptr_t)&ret0 },
@@ -699,6 +700,7 @@ so_default_dynlib default_dynlib[] = {
         { "glGetError", (uintptr_t)&glGetError },
         { "glGetFixedv", (uintptr_t)&ret0 },
         { "glGetFloatv", (uintptr_t)&glGetFloatv },
+        { "glGetFramebufferAttachmentParameteriv", (uintptr_t)&glGetFramebufferAttachmentParameteriv },
         { "glGetFramebufferAttachmentParameterivOES", (uintptr_t)&glGetFramebufferAttachmentParameteriv },
         { "glGetIntegerv", (uintptr_t)&glGetIntegerv },
         { "glGetLightfv", (uintptr_t)&ret0 },
@@ -709,6 +711,8 @@ so_default_dynlib default_dynlib[] = {
         { "glGetRenderbufferParameterivOES", (uintptr_t)&ret0 },
         { "glGetProgramInfoLog", (uintptr_t)&glGetProgramInfoLog },
         { "glGetProgramiv", (uintptr_t)&glGetProgramiv },
+        { "glGetRenderbufferParameteriv", (uintptr_t)&ret0 },
+        { "glGetShaderPrecisionFormat", (uintptr_t)&glGetShaderPrecisionFormat_soloader },
         { "glGetShaderInfoLog", (uintptr_t)&glGetShaderInfoLog },
         { "glGetShaderSource", (uintptr_t)&glGetShaderSource },
         { "glGetShaderiv", (uintptr_t)&glGetShaderiv },
@@ -723,11 +727,16 @@ so_default_dynlib default_dynlib[] = {
         { "glGetTexParameteriv", (uintptr_t)&ret0 },
         { "glGetTexParameterxv", (uintptr_t)&ret0 },
         { "glGetUniformLocation", (uintptr_t)&glGetUniformLocation },
+        { "glGetUniformfv", (uintptr_t)&ret0 },
+        { "glGetUniformiv", (uintptr_t)&ret0 },
         { "glHint", (uintptr_t)&glHint },
         { "glIsBuffer", (uintptr_t)&ret0 },
         { "glIsRenderbuffer", (uintptr_t)&glIsRenderbuffer },
         { "glIsEnabled", (uintptr_t)&glIsEnabled },
         { "glIsFramebufferOES", (uintptr_t)&glIsFramebuffer },
+        { "glIsFramebuffer", (uintptr_t)&glIsFramebuffer },
+        { "glIsProgram", (uintptr_t)&glIsProgram },
+        { "glIsShader", (uintptr_t)&ret0 },
         { "glIsRenderbufferOES", (uintptr_t)&glIsRenderbuffer },
         { "glIsTexture", (uintptr_t)&glIsTexture },
         { "glLightf", (uintptr_t)&ret0 },
@@ -788,6 +797,8 @@ so_default_dynlib default_dynlib[] = {
         { "glScissor", (uintptr_t)&glScissor },
         { "glShadeModel", (uintptr_t)&glShadeModel },
         { "glShaderSource", (uintptr_t)&glShaderSource_soloader },
+        { "glShaderBinary", (uintptr_t)&glShaderBinary },
+        { "glReleaseShaderCompiler", (uintptr_t)&glReleaseShaderCompiler },
         { "glStencilFunc", (uintptr_t)&glStencilFunc },
         { "glStencilFuncSeparate", (uintptr_t)&glStencilFuncSeparate },
         { "glStencilMask", (uintptr_t)&glStencilMask },
@@ -814,6 +825,7 @@ so_default_dynlib default_dynlib[] = {
         { "glTexParameterx", (uintptr_t)&glTexParameterx },
         { "glTexParameterxv", (uintptr_t)&ret0 },
         { "glTexSubImage2D", (uintptr_t)&glTexSubImage2D },
+        { "glStencilMaskSeparate", (uintptr_t)&glStencilMaskSeparate },
         { "glTranslatef", (uintptr_t)&glTranslatef },
         { "glTranslatex", (uintptr_t)&glTranslatex },
         { "glUniform1f", (uintptr_t)&glUniform1f },
@@ -843,6 +855,15 @@ so_default_dynlib default_dynlib[] = {
         { "glVertexAttrib4fv", (uintptr_t)&glVertexAttrib4fv },
         { "glVertexAttribPointer", (uintptr_t)&glVertexAttribPointer },
         { "glVertexPointer", (uintptr_t)&glVertexPointer },
+        { "glVertexAttrib1f", (uintptr_t)&glVertexAttrib1f },
+        { "glVertexAttrib1fv", (uintptr_t)&glVertexAttrib1fv },
+        { "glVertexAttrib2f", (uintptr_t)&glVertexAttrib2f },
+        { "glVertexAttrib2fv", (uintptr_t)&glVertexAttrib2fv },
+        { "glVertexAttrib3f", (uintptr_t)&glVertexAttrib3f },
+        { "glVertexAttrib3fv", (uintptr_t)&glVertexAttrib3fv },
+        { "glGetVertexAttribfv", (uintptr_t)&glGetVertexAttribfv },
+        { "glGetVertexAttribiv", (uintptr_t)&glGetVertexAttribiv },
+        { "glGetVertexAttribPointerv", (uintptr_t)&glGetVertexAttribPointerv },
         { "glViewport", (uintptr_t)&glViewport },
         { "glWeightPointerOES", (uintptr_t)&ret0 },
 
@@ -1137,7 +1158,7 @@ so_default_dynlib default_dynlib[] = {
 void *dlsym_soloader(void * handle, const char * symbol) {
     for (int i = 0; i < sizeof(default_dynlib) / sizeof(default_dynlib[0]); i++) {
         if (strcmp(symbol, default_dynlib[i].symbol) == 0) {
-            return &default_dynlib[i].func;
+            return (void *)default_dynlib[i].func;
         }
     }
 

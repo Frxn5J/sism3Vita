@@ -9,6 +9,8 @@
 
 #include <psp2/kernel/clib.h>
 #include <psp2/kernel/threadmgr.h>
+#include <psp2/io/fcntl.h>
+#include <string.h>
 
 #include <stdbool.h>
 #include <stdatomic.h>
@@ -29,6 +31,7 @@ static atomic_bool _log_mutex_ready = ATOMIC_VAR_INIT(false);
 static char buffer_a[2048];
 // Buffer B is used to compile the final log using the updated format string.
 static char buffer_b[2048];
+static SceUID boot_log = -1;
 
 void _log_print(int t, const char* fmt, ...) {
     if (!atomic_load_explicit(&_log_mutex_ready, memory_order_relaxed)) {
@@ -74,7 +77,14 @@ void _log_print(int t, const char* fmt, ...) {
     va_start(list, fmt);
     sceClibVsnprintf(buffer_b, sizeof(buffer_b), buffer_a, list);
     va_end(list);
-    sceClibPrintf(buffer_b);
+    sceClibPrintf("%s", buffer_b);
+    // Keep startup milestones after the small TTY ring has wrapped.
+    if (t != LT_DEBUG) {
+        if (boot_log < 0)
+            boot_log = sceIoOpen(DATA_PATH "boot.log", SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0666);
+        if (boot_log >= 0)
+            sceIoWrite(boot_log, buffer_b, strlen(buffer_b));
+    }
 
     if (atomic_load_explicit(&_log_mutex_ready, memory_order_relaxed)) {
         sceKernelUnlockLwMutex(&_log_mutex, 1);

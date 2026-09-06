@@ -49,7 +49,7 @@ void glShaderSource_soloader(GLuint shader, GLsizei count,
 #ifdef DEBUG_OPENGL
     sceClibPrintf("[gl_dbg] glShaderSource<%p>(shader: %i, count: %i, string: %p, length: %p)\n", __builtin_return_address(0), shader, count, string, _length);
 #endif
-    if (!string) {
+    if (!string || count <= 0) {
         l_error("<%p> Shader source string is NULL, count: %i",
                    __builtin_return_address(0), count);
         skip_next_compile = GL_TRUE;
@@ -64,24 +64,34 @@ void glShaderSource_soloader(GLuint shader, GLsizei count,
     size_t total_length = 0;
 
     for (int i = 0; i < count; ++i) {
-        if (!_length) {
-            total_length += strlen(string[i]);
-        } else {
-            total_length += _length[i];
+        if (!string[i]) {
+            l_error("<%p> Shader source string[%i] is NULL", __builtin_return_address(0), i);
+            return;
         }
+        size_t part_length = !_length || _length[i] < 0
+            ? strlen(string[i])
+            : (size_t)_length[i];
+        if (part_length > SIZE_MAX - total_length - 1) {
+            l_error("<%p> Shader source length overflow", __builtin_return_address(0));
+            return;
+        }
+        total_length += part_length;
     }
 
     char * str = malloc(total_length+1);
+    if (!str) {
+        l_error("<%p> Shader source allocation failed (%u bytes)",
+                   __builtin_return_address(0), (unsigned int)(total_length + 1));
+        return;
+    }
     size_t l = 0;
 
     for (int i = 0; i < count; ++i) {
-        if (!_length) {
-            memcpy(str + l, string[i], strlen(string[i]));
-            l += strlen(string[i]);
-        } else {
-            memcpy(str + l, string[i], _length[i]);
-            l += _length[i];
-        }
+        size_t part_length = !_length || _length[i] < 0
+            ? strlen(string[i])
+            : (size_t)_length[i];
+        memcpy(str + l, string[i], part_length);
+        l += part_length;
     }
     str[total_length] = '\0';
 
@@ -108,6 +118,19 @@ void glCompileShader_soloader(GLuint shader) {
     }
     skip_next_compile = GL_FALSE;
 #endif
+}
+
+void glGetShaderPrecisionFormat_soloader(GLenum shader_type, GLenum precision_type,
+                                         GLint *range, GLint *precision) {
+    (void)shader_type;
+    if (range) {
+        range[0] = 127;
+        range[1] = 127;
+    }
+    (void)precision_type;
+    if (precision) {
+        *precision = 23;
+    }
 }
 
 #if defined(USE_GLSL_SHADERS) && defined(DUMP_COMPILED_SHADERS)

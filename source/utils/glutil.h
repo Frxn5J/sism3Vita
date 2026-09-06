@@ -28,6 +28,8 @@ void gl_preload();
 void gl_swap();
 
 void glCompileShader_soloader(GLuint shader);
+void glGetShaderPrecisionFormat_soloader(GLenum shader_type, GLenum precision_type,
+                                         GLint *range, GLint *precision);
 
 void glShaderSource_soloader(GLuint shader, GLsizei count,
                              const GLchar **string, const GLint *_length);

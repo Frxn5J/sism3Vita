@@ -17,9 +17,12 @@
 #include <psp2/kernel/processmgr.h>
 #include <psp2/rtc.h>
 #include <stdlib.h>
+#include <kubridge.h>
+#include <psp2/kernel/sysmem.h>
 
 #include "utils/utils.h"
 #include "utils/logger.h"
+#include "utils/dialog.h"
 
 #define BIONIC_CLOCK_REALTIME           0
 #define BIONIC_CLOCK_MONOTONIC          1
@@ -150,10 +153,97 @@ int getpagesize(void) {
     return PAGE_SIZE;
 }
 
+typedef struct CodeBlock {
+	void *base;
+	size_t size;
+	SceUID uid;
+	struct CodeBlock *next;
+} CodeBlock;
+
+static CodeBlock *code_blocks;
+
+void *marmalade_code_alloc(size_t len) {
+	if (!len || len > SIZE_MAX - (PAGE_SIZE - 1))
+		fatal_error("Invalid Marmalade code size: 0x%x", len);
+	size_t size = (len + PAGE_SIZE - 1) & ~(size_t)(PAGE_SIZE - 1);
+	CodeBlock *block = calloc(1, sizeof(*block));
+	if (!block) fatal_error("Could not allocate code block metadata.");
+	SceUID uid = sceKernelAllocMemBlock("MarmaladeCode", SCE_KERNEL_MEMBLOCK_TYPE_USER_RW, size, NULL);
+	if (uid < 0) {
+		free(block);
+		fatal_error("Could not allocate Marmalade code (0x%x bytes): 0x%x", size, uid);
+	}
+	int ret = sceKernelGetMemBlockBase(uid, &block->base);
+	if (ret >= 0) {
+		memset(block->base, 0, size);
+		ret = kuKernelMemProtect(block->base, size,
+			KU_KERNEL_PROT_READ | KU_KERNEL_PROT_WRITE | KU_KERNEL_PROT_EXEC);
+	}
+	if (ret < 0) {
+		sceKernelFreeMemBlock(uid);
+		free(block);
+		fatal_error("Could not enable Marmalade code execution: 0x%x", ret);
+	}
+	block->uid = uid;
+	block->size = size;
+	block->next = code_blocks;
+	code_blocks = block;
+	l_info("Marmalade code arena: %p + 0x%x, uid=0x%x, RWX", block->base, size, uid);
+	return block->base;
+}
+
+void marmalade_code_free(void *addr) {
+	if (!addr) return;
+	for (CodeBlock **link = &code_blocks; *link; link = &(*link)->next) {
+		CodeBlock *block = *link;
+		if (block->base != addr) continue;
+		int ret = sceKernelFreeMemBlock(block->uid);
+		if (ret < 0) fatal_error("Could not free Marmalade code %p: 0x%x", addr, ret);
+		*link = block->next;
+		free(block);
+		return;
+	}
+	fatal_error("Attempt to free an unknown Marmalade code arena: %p", addr);
+}
+
 int mprotect_soloader(void *addr, size_t len, int prot) {
-    (void)addr; (void)len; (void)prot;
-    l_warn("mprotect(%p, %zu, 0x%x): stub -> 0", addr, len, prot);
-    return 0;
+	uintptr_t start = (uintptr_t)addr;
+	if ((start & (PAGE_SIZE - 1)) || (prot & ~7) ||
+	    len > SIZE_MAX - (PAGE_SIZE - 1)) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (!len) return 0;
+	size_t size = (len + PAGE_SIZE - 1) & ~(size_t)(PAGE_SIZE - 1);
+	if (size > UINTPTR_MAX - start) {
+		errno = EINVAL;
+		return -1;
+	}
+	for (CodeBlock *block = code_blocks; block; block = block->next) {
+		uintptr_t base = (uintptr_t)block->base;
+		if (start >= base + block->size || start + size <= base) continue;
+		if (start < base || start + size > base + block->size || (prot != 5 && prot != 7))
+			fatal_error("Unexpected code protection: %p + 0x%x, prot=0x%x", addr, len, prot);
+		// kubridge splits remap untouched pieces with the block's original RW policy.
+		// Keep only these dedicated code arenas uniformly RWX, never split them.
+		l_info("mprotect(%p, %zu, 0x%x): retaining dedicated code arena RWX", addr, len, prot);
+		return 0;
+	}
+	int vita_prot = KU_KERNEL_PROT_NONE;
+	if (prot & 1) vita_prot |= KU_KERNEL_PROT_READ;
+	if (prot & 2) vita_prot |= KU_KERNEL_PROT_WRITE;
+	if (prot & 4) vita_prot |= KU_KERNEL_PROT_EXEC;
+
+	int ret = kuKernelMemProtect(addr, len, vita_prot);
+	if (ret < 0) {
+		l_warn("mprotect(%p, %zu, 0x%x): failed 0x%x", addr, len, prot, ret);
+		if (prot & 4) fatal_error("Executable mprotect failed: %p + 0x%x, error=0x%x", addr, len, ret);
+		errno = EACCES;
+		return -1;
+	}
+
+	l_info("mprotect(%p, %zu, 0x%x): applied", addr, len, prot);
+	return 0;
 }
 
 int statfs_soloader(const char *path, void *buf) {

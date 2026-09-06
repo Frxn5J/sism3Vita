@@ -56,6 +56,8 @@ int setenv_soloader(const char * name, const char * value, int overwrite);
 int getpagesize(void);
 
 int mprotect_soloader(void *addr, size_t len, int prot);
+void *marmalade_code_alloc(size_t len);
+void marmalade_code_free(void *addr);
 int statfs_soloader(const char *path, void *buf);
 int uname_soloader(void *buf);
 
