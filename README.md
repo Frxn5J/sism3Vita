@@ -28,8 +28,13 @@ Copy the target library and extracted APK assets to:
 
 ```text
 ux0:data/thesims3/libthesims3.so
+ux0:data/thesims3/The-Sims-3_1.5.21.apk
 ux0:data/thesims3/assets/
 ```
+
+Keep the APK intact. Marmalade receives it as Android's package resource path
+while the extracted `assets/` directory remains available to the Vita file
+bridges.
 
 The target-specific Title ID is `TS3D00001`, chosen to avoid an existing `TSIM00001` installation.
 

@@ -15,8 +15,6 @@
 #include <psp2/kernel/processmgr.h>
 #include <psp2/message_dialog.h>
 
-#include <vitaGL.h>
-
 static uint16_t ime_title_utf16[SCE_IME_DIALOG_MAX_TITLE_LENGTH];
 static uint16_t ime_initial_text_utf16[SCE_IME_DIALOG_MAX_TEXT_LENGTH];
 static uint16_t ime_input_text_utf16[SCE_IME_DIALOG_MAX_TEXT_LENGTH + 1];
@@ -131,12 +129,10 @@ void fatal_error(const char *fmt, ...) {
     sceClibVsnprintf(string, sizeof(string), fmt, list);
     va_end(list);
 
-    vglInit(0);
-
     init_msg_dialog(string);
 
     while (!get_msg_dialog_result())
-        vglSwapBuffers(GL_TRUE);
+        sceKernelDelayThread(10000);
 
     sceKernelExitProcess(0);
 
