@@ -22,6 +22,7 @@
 // Helpers for our handling of shaders
 GLboolean skip_next_compile = GL_FALSE;
 char next_shader_fname[256];
+static unsigned int shader_trace_count;
 void load_shader(GLuint shader, const char * string, size_t length);
 
 void gl_preload() {
@@ -61,6 +62,12 @@ void glShaderSource_soloader(GLuint shader, GLsizei count,
         return;
     }
 
+    if (shader_trace_count < 32) {
+        l_warn("shader source #%u: id=%u count=%d strings=%p lengths=%p first=%p",
+               shader_trace_count, (unsigned int)shader, (int)count,
+               string, _length, string[0]);
+    }
+
     size_t total_length = 0;
 
     for (int i = 0; i < count; ++i) {
@@ -77,6 +84,13 @@ void glShaderSource_soloader(GLuint shader, GLsizei count,
         }
         total_length += part_length;
     }
+
+    if (shader_trace_count < 32) {
+        l_warn("shader source #%u: id=%u length=%u",
+               shader_trace_count, (unsigned int)shader,
+               (unsigned int)total_length);
+    }
+    shader_trace_count++;
 
     char * str = malloc(total_length+1);
     if (!str) {
@@ -107,6 +121,21 @@ void glCompileShader_soloader(GLuint shader) {
 
 #ifndef USE_GXP_SHADERS
     if (!skip_next_compile) {
+        if (shader_trace_count < 32) {
+            GLint source_length = 0;
+            GLsizei copied_length = 0;
+            char source_preview[257];
+            glGetShaderiv(shader, GL_SHADER_SOURCE_LENGTH, &source_length);
+            glGetShaderSource(shader, sizeof(source_preview), &copied_length,
+                              source_preview);
+            if (copied_length < 0 || copied_length >= (GLsizei)sizeof(source_preview))
+                copied_length = (GLsizei)sizeof(source_preview) - 1;
+            source_preview[copied_length] = '\0';
+            l_warn("shader compile: id=%u source_length=%d copied=%d text=%.*s",
+                   (unsigned int)shader, (int)source_length,
+                   (int)copied_length, (int)sizeof(source_preview) - 1,
+                   source_preview);
+        }
         glCompileShader(shader);
 #ifdef DUMP_COMPILED_SHADERS
         void *bin = vglMalloc(32 * 1024);
