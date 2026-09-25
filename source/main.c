@@ -5,6 +5,7 @@
 #include "utils/utils.h"
 #include "java.h"
 
+#include <psp2/kernel/processmgr.h>
 #include <psp2/kernel/threadmgr.h>
 
 #include <falso_jni/FalsoJNI.h>
@@ -133,6 +134,12 @@ int main() {
     uint64_t run_start_ms = current_timestamp_ms();
     run_native(&jni, loader_thread, file_root, package_path);
     l_info("Marmalade runtime exited after %llu ms.", current_timestamp_ms() - run_start_ms);
+    if (marmalade_quit_requested) {
+        // The game quit on purpose. Ending only this thread would leave the
+        // controls thread running behind a frozen screen.
+        sceKernelExitProcess(0);
+    }
+    l_warn("runNative returned without a quit request; other threads keep running.");
 #else
     // Build a fake ANativeActivity that the game's onCreate will receive
     ANativeActivity *activity = malloc(sizeof(ANativeActivity));

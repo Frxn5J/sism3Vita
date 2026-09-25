@@ -23,6 +23,9 @@ void resolve_imports(so_module *mod);
 
 void so_patch();
 
+// Set by the s3eDeviceExit/s3eDeviceRequestQuit hooks in patch.c.
+extern volatile int marmalade_quit_requested;
+
 void soloader_init_all();
 
 #ifdef __cplusplus

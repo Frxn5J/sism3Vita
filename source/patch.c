@@ -132,15 +132,19 @@ static void *s3e_malloc_traced(size_t size) {
 	return SO_CONTINUE(void *, s3e_malloc_hook, size);
 }
 
+volatile int marmalade_quit_requested;
+
 static void s3e_device_exit_traced(void) {
 	// Diagnostic: who asks the device to exit, and from where.
 	l_error("s3eDeviceExit: requested from %p", __builtin_return_address(0));
+	marmalade_quit_requested = 1;
 	SO_CONTINUE(int, s3e_device_exit_hook);
 }
 
 static void s3e_device_req_quit_traced(void) {
 	// Diagnostic: the game loop quits when this flag is set.
 	l_error("s3eDeviceRequestQuit: requested from %p", __builtin_return_address(0));
+	marmalade_quit_requested = 1;
 	SO_CONTINUE(int, s3e_device_req_quit_hook);
 }
 
