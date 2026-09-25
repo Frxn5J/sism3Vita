@@ -147,8 +147,9 @@ long read_soloader(int fd, void *buf, unsigned int count) {
 
 long lseek_soloader(int fd, long offset, int whence) {
     long ret = lseek(fd, offset, whence);
-    // Diagnostic: full seek trace (the .s3e loader seeks near-EOF footers).
-    l_info("lseek(fd=%d, %li, %d): ret=%li", fd, offset, whence, ret);
+    // Only failures: a full seek trace floods boot.log while streaming.
+    if (ret < 0)
+        l_warn("lseek(fd=%d, %li, %d): ret=%li", fd, offset, whence, ret);
     return ret;
 }
 

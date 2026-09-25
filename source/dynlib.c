@@ -1061,7 +1061,7 @@ so_default_dynlib default_dynlib[] = {
         { "sbrk", (uintptr_t)&sbrk },
         { "statfs", (uintptr_t)&statfs_soloader },
         { "syscall", (uintptr_t)&syscall },
-        { "sysconf", (uintptr_t)&ret0 },
+        { "sysconf", (uintptr_t)&sysconf_soloader },
         { "system", (uintptr_t)&system },
         { "uname", (uintptr_t)&uname_soloader },
         { "waitpid", (uintptr_t)&ret0 },

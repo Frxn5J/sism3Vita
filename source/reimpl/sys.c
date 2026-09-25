@@ -41,6 +41,13 @@
 #define BIONIC_CLOCK_SGI_CYCLE         10
 #define BIONIC_CLOCK_TAI               11
 
+// Bionic's sysconf() names (bits/sysconf.h); newlib numbers them differently.
+#define BIONIC_SC_CLK_TCK          0x0006
+#define BIONIC_SC_PAGESIZE         0x0027
+#define BIONIC_SC_PAGE_SIZE        0x0028
+#define BIONIC_SC_NPROCESSORS_CONF 0x0060
+#define BIONIC_SC_NPROCESSORS_ONLN 0x0061
+
 // 1969 years in microseconds, used to adjust SCE tick to UNIX timestamp
 #define __epoch 62135587294000000
 
@@ -175,17 +182,38 @@ int nanosleep_soloader(const struct timespec *req, struct timespec *rem) {
     return nanosleep(req, rem);
 }
 
+// Like the sleeps above, only log waits that can block for 0.5 s or more:
+// short polls run every frame and would flood boot.log.
 int select_soloader(int nfds, void *readfds, void *writefds, void *exceptfds,
                     struct timeval *timeout) {
-    l_info("select(%d, tout=%lis): from %p", nfds,
-           timeout ? (long)timeout->tv_sec : -1L, __builtin_return_address(0));
+    if (!timeout || timeout->tv_sec > 0 || timeout->tv_usec >= 500000)
+        l_info("select(%d, tout=%lis): from %p", nfds,
+               timeout ? (long)timeout->tv_sec : -1L, __builtin_return_address(0));
     return select(nfds, readfds, writefds, exceptfds, timeout);
 }
 
 int poll_soloader(void *fds, unsigned long nfds, int timeout) {
-    l_info("poll(nfds=%lu, timeout=%d): from %p", nfds, timeout,
-           __builtin_return_address(0));
+    if (timeout < 0 || timeout >= 500)
+        l_info("poll(nfds=%lu, timeout=%d): from %p", nfds, timeout,
+               __builtin_return_address(0));
     return poll(fds, nfds, timeout);
+}
+
+long sysconf_soloader(int name) {
+    switch (name) {
+        case BIONIC_SC_PAGESIZE:
+        case BIONIC_SC_PAGE_SIZE:
+            return PAGE_SIZE;
+        case BIONIC_SC_NPROCESSORS_CONF:
+        case BIONIC_SC_NPROCESSORS_ONLN:
+            return 3; // Cores 0-2 are available to applications.
+        case BIONIC_SC_CLK_TCK:
+            return 100;
+        default:
+            // Unchanged from the old ret0 stub, but visible in the log.
+            l_warn("sysconf(0x%x): not implemented -> 0", name);
+            return 0;
+    }
 }
 
 typedef struct CodeBlock {
