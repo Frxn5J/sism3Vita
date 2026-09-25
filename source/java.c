@@ -44,7 +44,17 @@ enum {
 	METHOD_VIDEO_STOP,
 	METHOD_NETWORK_CHECK_START,
 	METHOD_NETWORK_CHECK_STOP,
+	METHOD_VIDEO_PLAY,
+	METHOD_AUDIO_PLAY,
+	METHOD_SHOW_ERROR,
 };
+
+// LoaderThread.runOnOSTickNative()V in libthesims3.so (1.5.21), used when
+// RegisterNatives did not record it by name.
+#define MARMALADE_RUN_ON_OS_TICK_OFFSET 0x2dbf1
+
+// Marmalade treats -1 and -2 from videoPlay/audioPlay as failure, 0 as started.
+#define MARMALADE_MEDIA_ERROR (-1)
 
 static int backend_initialized;
 static int game_gl_started;
@@ -353,12 +363,62 @@ static void method_run_runnable(jmethodID id, va_list args) {
 	}
 }
 
+typedef void (*run_on_os_tick_fn)(JNIEnv *env, jobject thiz);
+
 static void method_run_on_os_signal(jmethodID id, va_list args) {
 	(void)id;
 	(void)args;
+	// s3eEdkThreadRunOnOS stores a pending call, calls runOnOSSignal and, for
+	// synchronous calls, waits on a semaphore with no timeout. On Android the
+	// UI thread answers by calling runOnOSTickNative, which runs the pending
+	// call and posts that semaphore. Do it right here, or the caller hangs.
+	static run_on_os_tick_fn tick;
+	if (!tick) {
+		uintptr_t fn = java_native_lookup("runOnOSTickNative");
+		if (!fn)
+			fn = so_mod.load_addr + MARMALADE_RUN_ON_OS_TICK_OFFSET;
+		tick = (run_on_os_tick_fn)fn;
+	}
 	if ((++run_on_os_signal_count % 30) == 1) {
 		l_info("runOnOSSignal called %d times", run_on_os_signal_count);
 	}
+	tick(&jni, JAVA_LOADER_THREAD);
+}
+
+static void log_java_string(const char *what, jstring string) {
+	const char *chars = string ? jni->GetStringUTFChars(&jni, string, NULL) : NULL;
+	l_warn("%s: \"%s\"", what, chars ? chars : "(null)");
+	if (chars)
+		jni->ReleaseStringUTFChars(&jni, string, (char *)chars);
+}
+
+static jint method_video_play(jmethodID id, va_list args) {
+	(void)id;
+	// No video playback: report failure so the game skips the clip instead of
+	// waiting for a videoStoppedNotify that would never come.
+	log_java_string("videoPlay unsupported", va_arg(args, jstring));
+	return MARMALADE_MEDIA_ERROR;
+}
+
+static jint method_audio_play(jmethodID id, va_list args) {
+	(void)id;
+	log_java_string("audioPlay unsupported", va_arg(args, jstring));
+	return MARMALADE_MEDIA_ERROR;
+}
+
+static jint method_show_error(jmethodID id, va_list args) {
+	(void)id;
+	// Marmalade reports loader failures through this dialog; keep its text.
+	jstring title = va_arg(args, jstring);
+	jstring message = va_arg(args, jstring);
+	const char *t = title ? jni->GetStringUTFChars(&jni, title, NULL) : NULL;
+	const char *m = message ? jni->GetStringUTFChars(&jni, message, NULL) : NULL;
+	l_error("showError: %s: %s", t ? t : "(null)", m ? m : "(null)");
+	if (t)
+		jni->ReleaseStringUTFChars(&jni, title, (char *)t);
+	if (m)
+		jni->ReleaseStringUTFChars(&jni, message, (char *)m);
+	return 0; // Same answer FalsoJNI gave before this was implemented.
 }
 
 static jobject method_get_card_root(jmethodID id, va_list args) {
@@ -444,6 +504,9 @@ NameToMethodID nameToMethodId[] = {
 		{ METHOD_VIDEO_STOP, "videoStop", METHOD_TYPE_VOID },
 		{ METHOD_NETWORK_CHECK_START, "networkCheckStart", METHOD_TYPE_BOOLEAN },
 		{ METHOD_NETWORK_CHECK_STOP, "networkCheckStop", METHOD_TYPE_BOOLEAN },
+		{ METHOD_VIDEO_PLAY, "videoPlay", METHOD_TYPE_INT },
+		{ METHOD_AUDIO_PLAY, "audioPlay", METHOD_TYPE_INT },
+		{ METHOD_SHOW_ERROR, "showError", METHOD_TYPE_INT },
 };
 
 MethodsBoolean methodsBoolean[] = {
@@ -462,6 +525,9 @@ MethodsInt methodsInt[] = {
 		{ METHOD_GET_NETWORK_TYPE, method_get_network_state },
 		{ METHOD_GET_ORIENTATION, method_get_orientation },
 		{ METHOD_GET_BATTERY_LEVEL, method_get_battery_level },
+		{ METHOD_VIDEO_PLAY, method_video_play },
+		{ METHOD_AUDIO_PLAY, method_audio_play },
+		{ METHOD_SHOW_ERROR, method_show_error },
 };
 MethodsLong methodsLong[] = {};
 MethodsObject methodsObject[] = {

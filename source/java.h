@@ -4,6 +4,11 @@
 #include <falso_jni/FalsoJNI.h>
 #include <stdint.h>
 
+// Fake LoaderThread object handed to Marmalade's natives.
+#define JAVA_LOADER_THREAD ((jobject)0x42424242)
+// Fake LoaderView object.
+#define JAVA_LOADER_VIEW ((jobject)0x69696969)
+
 #define JAVA_SURFACE_WIDTH 960
 #define JAVA_SURFACE_HEIGHT 544
 
