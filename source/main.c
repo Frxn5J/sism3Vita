@@ -55,9 +55,24 @@ typedef jboolean (*marmalade_key_event_fn)(JNIEnv *env, jobject loader_view,
 #define MARMALADE_TOUCH_UP   5
 #define MARMALADE_TOUCH_MOVE 6
 
-// Set once main() has resolved them; the controls thread starts earlier.
+// Set by main() before the controls thread starts.
 static marmalade_motion_event_fn volatile motion_event;
 static marmalade_key_event_fn volatile key_event;
+
+#ifndef NDK_PORT
+// Marmalade's loop runs inside runNative, so poll input from our own thread,
+// much like Android's UI thread delivering events.
+static int controls_thread(SceSize args, void *argp) {
+    (void)args;
+    (void)argp;
+    while (1) {
+        if (!java_text_input_active)
+            controls_poll();
+        sceKernelDelayThread(1000000 / 60);
+    }
+    return 0;
+}
+#endif
 
 static uintptr_t marmalade_entry(uintptr_t offset) {
     uintptr_t text_offset = so_mod.text_base - so_mod.load_addr;
@@ -124,11 +139,17 @@ int main() {
     marmalade_check_native("onKeyEventNative",
                            marmalade_entry(MARMALADE_KEY_EVENT_OFFSET));
 
-    // Marmalade drops input until its device layer is up, so these can be
-    // live before runNative. onMotionEvent is also registered by s3eTouchpad,
-    // which makes a by-name lookup ambiguous.
+    // Marmalade drops input until its device layer is up, so input can flow
+    // before runNative. onMotionEvent is also registered by s3eTouchpad, which
+    // makes a by-name lookup ambiguous.
     motion_event = (void *)marmalade_entry(MARMALADE_MOTION_EVENT_OFFSET);
     key_event = (void *)marmalade_entry(MARMALADE_KEY_EVENT_OFFSET);
+
+    SceUID input_thread = sceKernelCreateThread("MarmaladeInput", controls_thread,
+                                                0x10000100, 64 * 1024, 0, 0,
+                                                NULL);
+    if (input_thread < 0 || sceKernelStartThread(input_thread, 0, NULL) < 0)
+        fatal_error("Could not start the input thread: 0x%x", input_thread);
 
     jobject loader_thread = JAVA_LOADER_THREAD;
     jobject loader_view = JAVA_LOADER_VIEW;
@@ -162,7 +183,7 @@ int main() {
     l_info("Marmalade runtime exited after %llu ms.", current_timestamp_ms() - run_start_ms);
     if (marmalade_quit_requested) {
         // The game quit on purpose. Ending only this thread would leave the
-        // controls thread running behind a frozen screen.
+        // input, sound and Marmalade threads running behind a frozen screen.
         sceKernelExitProcess(0);
     }
     l_warn("runNative returned without a quit request; other threads keep running.");
