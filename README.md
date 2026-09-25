@@ -4,23 +4,41 @@ Experimental PlayStation Vita port based on `soloader-boilerplate`.
 
 ## Current Status
 
-- Target library: `libthesims3.so` from an ARM `armeabi` APK.
-- The library declares ARMv5T and uses the Marmalade `s3e` engine.
-- A diagnostic VPK builds with VitaSDK-softfp.
-- Runtime work is still required: `libshacccg.suprx`, unresolved imports, JNI mappings and Marmalade lifecycle calls.
+- Target library: `libthesims3.so` (531164 bytes) from the ARM `armeabi` APK `The-Sims-3_1.5.21.apk`.
+- The library declares ARMv5T and uses the Marmalade `s3e` engine, so the port builds with VitaSDK-softfp.
+- All 160 imports of the library are resolved in `source/dynlib.c`.
+- Boot reaches `JNI_OnLoad` and Marmalade's `initNative`, `setPixelsNative`, `setViewNative` and `runNative`, and Marmalade's software surface is presented through `doDraw`.
+- After the splash shaders link, Marmalade used to request a multi-GB `s3eMalloc`, because vitaGL returns uniform locations derived from pointers. `source/utils/glutil.c` now hands the game small per-program uniform ids and translates them back for vitaGL. This still needs to be confirmed on hardware.
+- Input is not wired yet: the `controls_handler_*` functions in `source/main.c` are empty. Every native the game registers is logged as `RegisterNatives(...)` in the boot log, which gives the names, signatures and offsets needed to connect touch and buttons.
+- The Marmalade entry points and patches use offsets from this exact library. `source/patch.c` verifies the code signatures before hooking, and `source/main.c` cross-checks its entry offsets against the registered natives.
 - The proprietary APK, extracted library and game assets are intentionally not included.
-
-The initial runtime test reached SO relocation and import resolution. Vita3K then required `libshacccg.suprx` and reported unresolved symbols including `tzname`, `uname`, `mprotect`, `statfs`, several pthread functions and ARM EABI helpers.
 
 ## Build
 
-Use the Windows setup repository first:
+Clone with submodules. They are pinned to published upstream commits:
+
+```sh
+git clone --recurse-submodules https://github.com/Frxn5J/sism3Vita
+# or, in an existing clone:
+git submodule update --init --recursive
+```
+
+With VitaSDK-softfp installed and `VITASDK` pointing to it:
+
+```sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+cmake --build build
+```
+
+On Windows, the setup repository script does the same:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File C:\vita-dev\build-port.ps1 C:\vita-dev\ports\the-sims-3 -Toolchain softfp -BuildType Debug
 ```
 
 The diagnostic output is written to `C:\vita-dev\analysis\builds\the-sims-3-softfp\the_sims_3.vpk`.
+
+If you change a submodule (for example vitaGL), push that commit to a fork and point `.gitmodules` at it before committing the new pin; otherwise nobody else can check it out.
 
 ## Runtime Data
 
@@ -41,6 +59,12 @@ The target-specific Title ID is `TS3D00001`, chosen to avoid an existing `TSIM00
 ## License and Inputs
 
 This repository contains port scaffolding and source changes only. Do not commit APKs, firmware modules, decrypted system files, proprietary assets or generated VPKs.
+
+---
+
+# soloader-boilerplate reference
+
+The rest of this file is the upstream boilerplate documentation, kept for reference.
 
 <p align="center">
   <a href="#what-is-this">What is this</a> •
