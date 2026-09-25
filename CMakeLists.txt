@@ -105,6 +105,7 @@ set(SOURCES
     source/reimpl/log.c
     source/reimpl/mem.c
     source/reimpl/pthr.c
+    source/reimpl/sound.c
     source/reimpl/sys.c
     source/reimpl/time64.c
     source/utils/dialog.c

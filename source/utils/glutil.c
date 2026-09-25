@@ -46,6 +46,31 @@ void gl_swap() {
     vglSwapBuffers(GL_FALSE);
 }
 
+void gl_dialog_frame() {
+    // Common dialogs are drawn by vglSwapBuffers(GL_TRUE). Present a black
+    // frame under them without disturbing the state the game left bound.
+    GLint framebuffer = 0;
+    GLfloat clear_color[4];
+    GLboolean color_mask[4];
+    GLboolean scissor = glIsEnabled(GL_SCISSOR_TEST);
+    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &framebuffer);
+    glGetFloatv(GL_COLOR_CLEAR_VALUE, clear_color);
+    glGetBooleanv(GL_COLOR_WRITEMASK, color_mask);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glDisable(GL_SCISSOR_TEST);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+    vglSwapBuffers(GL_TRUE);
+
+    glClearColor(clear_color[0], clear_color[1], clear_color[2], clear_color[3]);
+    glColorMask(color_mask[0], color_mask[1], color_mask[2], color_mask[3]);
+    if (scissor)
+        glEnable(GL_SCISSOR_TEST);
+    glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)framebuffer);
+}
+
 void glShaderSource_soloader(GLuint shader, GLsizei count,
                              const GLchar **string, const GLint *_length) {
 #ifdef DEBUG_OPENGL

@@ -22,4 +22,7 @@ void java_natives_hook(void);
 // Function registered under `name`, or 0 if it is unknown or ambiguous.
 uintptr_t java_native_lookup(const char *name);
 
+// Non-zero while getInputString shows the IME; game input is paused.
+extern volatile int java_text_input_active;
+
 #endif

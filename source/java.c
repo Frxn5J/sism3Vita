@@ -10,6 +10,7 @@
 #include "utils/glutil.h"
 #include "utils/logger.h"
 #include "utils/font_utils.h"
+#include "reimpl/sound.h"
 
 #include <so_util/so_util.h>
 
@@ -47,7 +48,14 @@ enum {
 	METHOD_VIDEO_PLAY,
 	METHOD_AUDIO_PLAY,
 	METHOD_SHOW_ERROR,
+	METHOD_SOUND_INIT,
+	METHOD_SOUND_START,
+	METHOD_SOUND_STOP,
+	METHOD_SOUND_SET_VOLUME,
+	METHOD_GET_INPUT_STRING,
 };
+
+volatile int java_text_input_active;
 
 // LoaderThread.runOnOSTickNative()V in libthesims3.so (1.5.21), used when
 // RegisterNatives did not record it by name.
@@ -55,6 +63,10 @@ enum {
 
 // Marmalade treats -1 and -2 from videoPlay/audioPlay as failure, 0 as started.
 #define MARMALADE_MEDIA_ERROR (-1)
+
+// LoaderView.setInputText(Ljava/lang/String;)V, used when RegisterNatives did
+// not record it by name.
+#define MARMALADE_SET_INPUT_TEXT_OFFSET 0x2dc15
 
 static int backend_initialized;
 static int game_gl_started;
@@ -406,6 +418,91 @@ static jint method_audio_play(jmethodID id, va_list args) {
 	return MARMALADE_MEDIA_ERROR;
 }
 
+static jint method_sound_init(jmethodID id, va_list args) {
+	(void)id;
+	jboolean stereo = (jboolean)va_arg(args, int);
+	(void)va_arg(args, jint); // Always 0 in this Marmalade build.
+	return sound_init(stereo);
+}
+
+static void method_sound_start(jmethodID id, va_list args) {
+	(void)id;
+	(void)args;
+	sound_start();
+}
+
+static void method_sound_stop(jmethodID id, va_list args) {
+	(void)id;
+	(void)args;
+	sound_stop();
+}
+
+static void method_sound_set_volume(jmethodID id, va_list args) {
+	(void)id;
+	sound_set_volume(va_arg(args, jint));
+}
+
+// Copies at most size-1 bytes without splitting a UTF-8 sequence.
+static void copy_utf8(char *dst, const char *src, size_t size) {
+	size_t len = src ? strlen(src) : 0;
+	if (len >= size) {
+		len = size - 1;
+		while (len > 0 && ((unsigned char)src[len] & 0xC0) == 0x80)
+			len--;
+	}
+	if (len)
+		memcpy(dst, src, len);
+	dst[len] = '\0';
+}
+
+typedef void (*set_input_text_fn)(JNIEnv *env, jobject thiz, jstring text);
+
+static void method_get_input_string(jmethodID id, va_list args) {
+	(void)id;
+	jstring title = va_arg(args, jstring);
+	jstring initial = va_arg(args, jstring);
+	jint flags = va_arg(args, jint);
+
+	char title_text[64];
+	char initial_text[512];
+	const char *t = title ? jni->GetStringUTFChars(&jni, title, NULL) : NULL;
+	const char *d = initial ? jni->GetStringUTFChars(&jni, initial, NULL) : NULL;
+	copy_utf8(title_text, t, sizeof(title_text));
+	copy_utf8(initial_text, d, sizeof(initial_text));
+	if (t)
+		jni->ReleaseStringUTFChars(&jni, title, (char *)t);
+	if (d)
+		jni->ReleaseStringUTFChars(&jni, initial, (char *)d);
+	l_info("getInputString(\"%s\", \"%s\", flags=0x%x)", title_text,
+	       initial_text, (unsigned int)flags);
+
+	// s3eOSReadString polls for setInputText's copy, yielding 20 ms at a
+	// time, so the game thread waits here until the IME closes. It is the GL
+	// thread, which is where the dialog has to be presented from.
+	const char *text = initial_text;
+	if (init_ime_dialog(title_text, initial_text) >= 0) {
+		java_text_input_active = 1;
+		ensure_gl_initialized();
+		char *result;
+		while (!(result = get_ime_dialog_result()))
+			gl_dialog_frame();
+		java_text_input_active = 0;
+		// Cancel leaves the result empty; keep the game's default instead.
+		if (result[0])
+			text = result;
+	} else {
+		l_error("getInputString: could not open the IME dialog");
+	}
+
+	uintptr_t fn = java_native_lookup("setInputText");
+	if (!fn)
+		fn = so_mod.load_addr + MARMALADE_SET_INPUT_TEXT_OFFSET;
+	jstring answer = jni->NewStringUTF(&jni, text);
+	if (!answer)
+		fatal_error("Could not allocate the IME result.");
+	((set_input_text_fn)fn)(&jni, JAVA_LOADER_VIEW, answer);
+}
+
 static jint method_show_error(jmethodID id, va_list args) {
 	(void)id;
 	// Marmalade reports loader failures through this dialog; keep its text.
@@ -507,6 +604,11 @@ NameToMethodID nameToMethodId[] = {
 		{ METHOD_VIDEO_PLAY, "videoPlay", METHOD_TYPE_INT },
 		{ METHOD_AUDIO_PLAY, "audioPlay", METHOD_TYPE_INT },
 		{ METHOD_SHOW_ERROR, "showError", METHOD_TYPE_INT },
+		{ METHOD_SOUND_INIT, "soundInit", METHOD_TYPE_INT },
+		{ METHOD_SOUND_START, "soundStart", METHOD_TYPE_VOID },
+		{ METHOD_SOUND_STOP, "soundStop", METHOD_TYPE_VOID },
+		{ METHOD_SOUND_SET_VOLUME, "soundSetVolume", METHOD_TYPE_VOID },
+		{ METHOD_GET_INPUT_STRING, "getInputString", METHOD_TYPE_VOID },
 };
 
 MethodsBoolean methodsBoolean[] = {
@@ -528,6 +630,7 @@ MethodsInt methodsInt[] = {
 		{ METHOD_VIDEO_PLAY, method_video_play },
 		{ METHOD_AUDIO_PLAY, method_audio_play },
 		{ METHOD_SHOW_ERROR, method_show_error },
+		{ METHOD_SOUND_INIT, method_sound_init },
 };
 MethodsLong methodsLong[] = {};
 MethodsObject methodsObject[] = {
@@ -553,6 +656,10 @@ MethodsVoid methodsVoid[] = {
 		{ METHOD_RUN_RUNNABLE, method_run_runnable },
 		{ METHOD_DO_DRAW, method_do_draw },
 		{ METHOD_VIDEO_STOP, method_void_stub },
+		{ METHOD_SOUND_START, method_sound_start },
+		{ METHOD_SOUND_STOP, method_sound_stop },
+		{ METHOD_SOUND_SET_VOLUME, method_sound_set_volume },
+		{ METHOD_GET_INPUT_STRING, method_get_input_string },
 };
 
 /*

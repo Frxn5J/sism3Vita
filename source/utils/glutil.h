@@ -27,6 +27,9 @@ void gl_preload();
 
 void gl_swap();
 
+// Presents one frame with system dialogs (IME, messages) on top.
+void gl_dialog_frame();
+
 void glCompileShader_soloader(GLuint shader);
 void glGetActiveAttrib_soloader(GLuint program, GLuint index, GLsizei buf_size,
                                  GLsizei *length, GLint *size, GLenum *type,
