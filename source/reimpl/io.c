@@ -279,10 +279,21 @@ struct dirent64_bionic * readdir_soloader(DIR * dir) {
             }
         }
         if (slot < 0) {
-            slot = readdir_slot_next++ % READDIR_SLOTS;
-            readdir_slots[slot].used = 1;
-            readdir_slots[slot].dir = dir;
+            for (int i = 0; i < READDIR_SLOTS; i++) {
+                if (!readdir_slots[i].used) {
+                    slot = i;
+                    break;
+                }
+            }
         }
+        if (slot < 0) {
+            // More than READDIR_SLOTS listings open at once: reuse the oldest.
+            slot = readdir_slot_next++ % READDIR_SLOTS;
+            l_warn("readdir(%p): all %d buffers busy, reusing slot %d", dir,
+                   READDIR_SLOTS, slot);
+        }
+        readdir_slots[slot].used = 1;
+        readdir_slots[slot].dir = dir;
         dirent64_bionic* entry_tmp = dirent_newlib_to_bionic(ret);
         memcpy(&readdir_slots[slot].ent, entry_tmp,
                sizeof(dirent64_bionic));
@@ -313,6 +324,11 @@ int readdir_r_soloader(DIR * dirp, dirent64_bionic * entry,
 }
 
 int closedir_soloader(DIR * dir) {
+    // Free the stream's readdir buffer: a later opendir may reuse this DIR*.
+    for (int i = 0; i < READDIR_SLOTS; i++) {
+        if (readdir_slots[i].used && readdir_slots[i].dir == dir)
+            readdir_slots[i].used = 0;
+    }
     int ret = closedir(dir);
     l_debug("closedir(%p): %i", dir, ret);
     return ret;
