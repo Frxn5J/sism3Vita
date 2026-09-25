@@ -59,15 +59,37 @@ typedef struct __attribute__((__packed__)) stat64_bionic {
     unsigned long long st_ino;
 } stat64_bionic;
 
+// Bionic (Android, ARM) `struct dirent` as seen by `readdir()`.
+// The game imports 32-bit `readdir`, so this must match Bionic's layout:
+// u64 ino, s64 off, u16 reclen, u8 type, name[256].
 typedef struct __attribute__((__packed__)) dirent64_bionic {
-    int16_t d_ino; // 2 bytes // offset 0x0
-    int64_t d_off; // 8 bytes // offset 0x2
-    uint64_t d_reclen; // 8 bytes // 0xA
+    uint64_t d_ino; // 8 bytes // offset 0x0
+    int64_t d_off; // 8 bytes // offset 0x8
+    uint16_t d_reclen; // 2 bytes // offset 0x10
     unsigned char d_type; // 1 byte // offset 0x12
     char d_name[256]; // 256 bytes // offset 0x13
 } dirent64_bionic;
 
 int open_soloader(const char * path, int oflag, ...);
+
+// Diagnostic wrappers: only failures/short I/O is logged, so healthy
+// streaming stays silent while truncated reads stand out.
+long read_soloader(int fd, void *buf, unsigned int count);
+long lseek_soloader(int fd, long offset, int whence);
+unsigned int fread_soloader(void *ptr, unsigned int size, unsigned int nmemb,
+                            void *stream);
+int fseek_soloader(FILE *stream, long offset, int whence);
+
+// Path-redirecting wrappers: Marmalade's existence checks (s3eFileCheckExists
+// and friends) use access()/mkdir()/unlink() directly, bypassing open/stat.
+int access_soloader(const char *path, int mode);
+int mkdir_soloader(const char *path, unsigned int mode);
+int unlink_soloader(const char *path);
+int rename_soloader(const char *oldpath, const char *newpath);
+int remove_soloader(const char *path);
+
+typedef long long off64_soloader_t;
+off64_soloader_t lseek64_soloader(int fd, off64_soloader_t offset, int whence);
 
 FILE * fopen_soloader(const char * filename, const char * mode);
 

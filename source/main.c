@@ -29,6 +29,7 @@ so_module so_mod;
 #define MARMALADE_SET_PIXELS_NATIVE_OFFSET 0x2dae9
 #define MARMALADE_RUN_NATIVE_OFFSET      0x2ddd1
 #define PACKAGE_RESOURCE_PATH            DATA_PATH "The-Sims-3_1.5.21.apk"
+#define MARMALADE_FILE_ROOT              DATA_PATH "assets/"
 
 typedef void (*marmalade_init_native_fn)(JNIEnv *env, jobject loader_thread);
 typedef void (*marmalade_set_view_native_fn)(JNIEnv *env, jobject loader_thread,
@@ -101,16 +102,19 @@ int main() {
     set_view_native(&jni, loader_thread, loader_view);
     l_info("Marmalade view configured.");
 
-    jstring file_root = jni->NewStringUTF(&jni, DATA_PATH);
+    // Marmalade's internal s3e provider bypasses the POSIX redirect wrappers.
+    // Point its file root directly at the extracted asset tree.
+    jstring file_root = jni->NewStringUTF(&jni, MARMALADE_FILE_ROOT);
     jstring package_path = jni->NewStringUTF(&jni, PACKAGE_RESOURCE_PATH);
     if (!file_root || !package_path) {
         fatal_error("Could not allocate Marmalade startup paths.");
     }
 
-    l_info("Starting Marmalade: root=%s package=%s", DATA_PATH,
+    l_info("Starting Marmalade: root=%s package=%s", MARMALADE_FILE_ROOT,
            PACKAGE_RESOURCE_PATH);
+    uint64_t run_start_ms = current_timestamp_ms();
     run_native(&jni, loader_thread, file_root, package_path);
-    l_info("Marmalade runtime exited.");
+    l_info("Marmalade runtime exited after %llu ms.", current_timestamp_ms() - run_start_ms);
 #else
     // Build a fake ANativeActivity that the game's onCreate will receive
     ANativeActivity *activity = malloc(sizeof(ANativeActivity));

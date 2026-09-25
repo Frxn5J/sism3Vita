@@ -10,6 +10,7 @@
 #include <psp2/kernel/clib.h>
 #include <psp2/kernel/threadmgr.h>
 #include <psp2/io/fcntl.h>
+#include <stdarg.h>
 #include <string.h>
 
 #include <stdbool.h>
@@ -32,6 +33,9 @@ static char buffer_a[2048];
 // Buffer B is used to compile the final log using the updated format string.
 static char buffer_b[2048];
 static SceUID boot_log = -1;
+static char overlay_lines[LOGGER_OVERLAY_LINES][LOGGER_OVERLAY_LINE_SIZE];
+static size_t overlay_next;
+static size_t overlay_count;
 
 void _log_print(int t, const char* fmt, ...) {
     if (!atomic_load_explicit(&_log_mutex_ready, memory_order_relaxed)) {
@@ -75,7 +79,18 @@ void _log_print(int t, const char* fmt, ...) {
 
     va_list list;
     va_start(list, fmt);
+    va_list overlay_list;
+    va_copy(overlay_list, list);
     sceClibVsnprintf(buffer_b, sizeof(buffer_b), buffer_a, list);
+    if (t != LT_DEBUG) {
+        sceClibVsnprintf(overlay_lines[overlay_next], LOGGER_OVERLAY_LINE_SIZE,
+                         fmt, overlay_list);
+        overlay_lines[overlay_next][LOGGER_OVERLAY_LINE_SIZE - 1] = '\0';
+        overlay_next = (overlay_next + 1) % LOGGER_OVERLAY_LINES;
+        if (overlay_count < LOGGER_OVERLAY_LINES)
+            overlay_count++;
+    }
+    va_end(overlay_list);
     va_end(list);
     sceClibPrintf("%s", buffer_b);
     // Keep startup milestones after the small TTY ring has wrapped.
@@ -89,4 +104,23 @@ void _log_print(int t, const char* fmt, ...) {
     if (atomic_load_explicit(&_log_mutex_ready, memory_order_relaxed)) {
         sceKernelUnlockLwMutex(&_log_mutex, 1);
     }
+}
+
+size_t logger_overlay_snapshot(char lines[LOGGER_OVERLAY_LINES][LOGGER_OVERLAY_LINE_SIZE],
+                               size_t max_lines) {
+    if (!lines || max_lines == 0 ||
+        !atomic_load_explicit(&_log_mutex_ready, memory_order_relaxed)) {
+        return 0;
+    }
+
+    sceKernelLockLwMutex(&_log_mutex, 1, NULL);
+    size_t count = overlay_count < max_lines ? overlay_count : max_lines;
+    size_t first = (overlay_next + LOGGER_OVERLAY_LINES - count) % LOGGER_OVERLAY_LINES;
+    for (size_t i = 0; i < count; ++i) {
+        size_t source = (first + i) % LOGGER_OVERLAY_LINES;
+        strncpy(lines[i], overlay_lines[source], LOGGER_OVERLAY_LINE_SIZE);
+        lines[i][LOGGER_OVERLAY_LINE_SIZE - 1] = '\0';
+    }
+    sceKernelUnlockLwMutex(&_log_mutex, 1);
+    return count;
 }

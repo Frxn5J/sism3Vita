@@ -54,6 +54,40 @@ EGLBoolean eglTerminate(EGLDisplay dpy);
 
 EGLContext eglGetCurrentContext (void);
 
+// Provided by vitaGL; declared here so dlsym/import tables can reference it.
+EGLSurface eglGetCurrentSurface(EGLint readdraw);
+
+EGLDisplay eglGetCurrentDisplay(void);
+
+EGLSurface eglCreatePbufferSurface(EGLDisplay dpy, EGLConfig config,
+                                   const EGLint *attrib_list);
+
+EGLSurface eglCreatePixmapSurface(EGLDisplay dpy, EGLConfig config,
+                                  void *pixmap, const EGLint *attrib_list);
+
+EGLSurface eglCreatePbufferFromClientBuffer(EGLDisplay dpy, EGLenum buftype,
+                                            void *buffer, EGLConfig config,
+                                            const EGLint *attrib_list);
+
+EGLBoolean eglSurfaceAttrib(EGLDisplay dpy, EGLSurface surface,
+                            EGLint attribute, EGLint value);
+
+EGLBoolean eglBindTexImage(EGLDisplay dpy, EGLSurface surface, EGLint buffer);
+
+EGLBoolean eglReleaseTexImage(EGLDisplay dpy, EGLSurface surface,
+                              EGLint buffer);
+
+EGLBoolean eglWaitClient(void);
+
+EGLBoolean eglWaitGL(void);
+
+EGLBoolean eglWaitNative(EGLint engine);
+
+EGLBoolean eglReleaseThread(void);
+
+EGLBoolean eglCopyBuffers(EGLDisplay dpy, EGLSurface surface,
+                          void *native_pixmap);
+
 EGLBoolean eglGetConfigs(EGLDisplay display, EGLConfig * configs,
                          EGLint config_size, EGLint * num_config);
 

@@ -9,6 +9,7 @@
 #include "utils/dialog.h"
 #include "utils/glutil.h"
 #include "utils/logger.h"
+#include "utils/font_utils.h"
 
 enum {
 	METHOD_GL_INIT = 1,
@@ -47,6 +48,53 @@ static jintArray software_pixels;
 static uint8_t *software_rgba;
 static GLuint software_texture;
 static int software_frame_logged;
+
+static void draw_overlay_pixel(int x, int y, uint8_t r, uint8_t g, uint8_t b,
+                               uint8_t a) {
+    if (x < 0 || x >= JAVA_SURFACE_WIDTH || y < 0 || y >= JAVA_SURFACE_HEIGHT)
+        return;
+    size_t offset = ((size_t)y * JAVA_SURFACE_WIDTH + (size_t)x) * 4;
+    software_rgba[offset] = r;
+    software_rgba[offset + 1] = g;
+    software_rgba[offset + 2] = b;
+    software_rgba[offset + 3] = a;
+}
+
+static void draw_overlay_char(int x, int y, char character) {
+    unsigned int glyph = (unsigned char)character;
+    if (glyph < 0x20 || glyph >= 0x80)
+        glyph = '?';
+    for (int row = 0; row < 10; ++row) {
+        unsigned char bits = font[glyph * 10 + row];
+        for (int column = 0; column < 6; ++column) {
+            if (bits & (1u << (7 - column)))
+                draw_overlay_pixel(x + column, y + row, 255, 255, 96, 255);
+        }
+    }
+}
+
+static void draw_overlay_text(int x, int y, const char *text) {
+    for (size_t i = 0; text[i] && x + (int)(i * 6) < JAVA_SURFACE_WIDTH - 5; ++i)
+        draw_overlay_char(x + (int)(i * 6), y, text[i]);
+}
+
+static void draw_live_log_overlay(void) {
+    char lines[LOGGER_OVERLAY_LINES][LOGGER_OVERLAY_LINE_SIZE];
+    size_t line_count = logger_overlay_snapshot(lines, LOGGER_OVERLAY_LINES);
+    if (line_count == 0)
+        return;
+
+    const int line_height = 11;
+    const int padding = 6;
+    int box_height = (int)line_count * line_height + padding * 2;
+    int box_y = JAVA_SURFACE_HEIGHT - box_height - 5;
+    for (int y = box_y; y < JAVA_SURFACE_HEIGHT - 5; ++y) {
+        for (int x = 0; x < JAVA_SURFACE_WIDTH; ++x)
+            draw_overlay_pixel(x, y, 0, 0, 0, 235);
+    }
+    for (size_t i = 0; i < line_count; ++i)
+        draw_overlay_text(6, box_y + padding + (int)(i * line_height), lines[i]);
+}
 
 jintArray java_surface_init(jint width, jint height) {
 	// gl_init() uses this fixed display size; this is not the splash image size.
@@ -112,6 +160,7 @@ static void method_do_draw(jmethodID id, va_list args) {
 		nonblack_pixels += (argb & 0x00ffffff) != 0;
 	}
 	jni->ReleaseIntArrayElements(&jni, software_pixels, pixels, JNI_ABORT);
+	draw_live_log_overlay();
 
 	ensure_gl_initialized();
 	glActiveTexture(GL_TEXTURE0);
@@ -183,10 +232,13 @@ static void method_do_draw(jmethodID id, va_list args) {
 		fatal_error("Software presentation failed: GL error 0x%x", error);
 	}
 	gl_swap();
-	if (!software_frame_logged) {
-		l_info("First software frame presented: %dx%d, %u nonblack native pixels",
-		       JAVA_SURFACE_WIDTH, JAVA_SURFACE_HEIGHT, nonblack_pixels);
-		software_frame_logged = 1;
+	software_frame_logged++;
+	// Diagnostic: prove the Marmalade loop is alive and whether the splash
+	// bitmap ever becomes non-black (logo decoded) or stays zeroed.
+	if (software_frame_logged == 1 || (software_frame_logged % 60) == 0) {
+		l_info("Software frame #%d presented: %dx%d, %u nonblack native pixels",
+		       software_frame_logged, JAVA_SURFACE_WIDTH, JAVA_SURFACE_HEIGHT,
+		       nonblack_pixels);
 	}
 }
 
@@ -227,6 +279,27 @@ static void method_gl_swap_buffers(jmethodID id, va_list args) {
 static void method_void_stub(jmethodID id, va_list args) {
 	(void)id;
 	(void)args;
+}
+
+static int run_runnable_count;
+static int run_on_os_signal_count;
+
+static void method_run_runnable(jmethodID id, va_list args) {
+	(void)id;
+	(void)args;
+	// Diagnostic: Marmalade pumps UI work (redraws) through runnables. If
+	// this counter grows while the screen stays black, the pump is the hang.
+	if ((++run_runnable_count % 30) == 1) {
+		l_info("runRunnable called %d times (UI pump direction)", run_runnable_count);
+	}
+}
+
+static void method_run_on_os_signal(jmethodID id, va_list args) {
+	(void)id;
+	(void)args;
+	if ((++run_on_os_signal_count % 30) == 1) {
+		l_info("runOnOSSignal called %d times", run_on_os_signal_count);
+	}
 }
 
 static jobject method_get_card_root(jmethodID id, va_list args) {
@@ -351,8 +424,8 @@ MethodsVoid methodsVoid[] = {
 		{ METHOD_DO_PAUSE, method_void_stub },
 		{ METHOD_FIX_ORIENTATION, method_void_stub },
 		{ METHOD_TOUCH_SET_WAIT, method_void_stub },
-		{ METHOD_RUN_ON_OS_SIGNAL, method_void_stub },
-		{ METHOD_RUN_RUNNABLE, method_void_stub },
+		{ METHOD_RUN_ON_OS_SIGNAL, method_run_on_os_signal },
+		{ METHOD_RUN_RUNNABLE, method_run_runnable },
 		{ METHOD_DO_DRAW, method_do_draw },
 		{ METHOD_VIDEO_STOP, method_void_stub },
 };

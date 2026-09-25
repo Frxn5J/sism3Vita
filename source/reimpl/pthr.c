@@ -170,6 +170,9 @@ PTHR_INLINE int _cond_t_static_init(pthread_cond_t_bionic * cond, const pthread_
 int pthread_create_soloader(pthread_t *thread, const pthread_attr_t_bionic *attr, void *(*start)(void *), void *param) {
     int ret;
 
+    // Diagnostic: inventory Marmalade's threads (StreamThread, BankLoader, …).
+    l_info("pthread_create: start=%p param=%p", start, param);
+
     if (!attr) {
         pthread_attr_t a;
         pthread_attr_init(&a);
@@ -214,10 +217,19 @@ int pthread_mutex_init_soloader(pthread_mutex_t_bionic *uid, const pthread_mutex
 int pthread_mutex_destroy_soloader(pthread_mutex_t_bionic *mutex)
 {
     if (!mutex) return 0;
+    if (!isObjectInitialized(mutex)) {
+        // Never initialized through our wrappers (e.g. a static
+        // PTHREAD_MUTEX_INITIALIZER that was never used): nothing to tear
+        // down. Destroying the raw real_ptr here crashed (was NULL/garbage).
+        return 0;
+    }
     forgetObject(mutex);
-    int ret = pthread_mutex_destroy(mutex->real_ptr);
-    if (mutex->real_ptr) free(mutex->real_ptr);
-    mutex->real_ptr = 0x0;
+    int ret = 0;
+    if (mutex->real_ptr) {
+        ret = pthread_mutex_destroy(mutex->real_ptr);
+        free(mutex->real_ptr);
+        mutex->real_ptr = 0x0;
+    }
     return ret;
 }
 
@@ -244,7 +256,12 @@ int pthread_mutex_unlock_soloader(pthread_mutex_t_bionic *mutex)
 
 int pthread_join_soloader(pthread_t thread, void **value_ptr)
 {
-    return pthread_join(thread, value_ptr);
+    // Diagnostic: a join that never returns is a hung game thread.
+    l_info("pthread_join(thread=%p): waiting from %p", (void *)thread,
+           __builtin_return_address(0));
+    int ret = pthread_join(thread, value_ptr);
+    l_info("pthread_join(thread=%p): done ret=%d", (void *)thread, ret);
+    return ret;
 }
 
 int pthread_condattr_init_soloader(pthread_condattr_t *attr)
@@ -270,10 +287,17 @@ int pthread_cond_init_soloader(pthread_cond_t_bionic *cond,
 int pthread_cond_destroy_soloader(pthread_cond_t_bionic *cond)
 {
     if (!cond) return 0;
+    if (!isObjectInitialized(cond)) {
+        // Same as mutexes above: never initialized, nothing to tear down.
+        return 0;
+    }
     forgetObject(cond);
-    int ret = pthread_cond_destroy(cond->real_ptr);
-    if (cond->real_ptr) free(cond->real_ptr);
-    cond->real_ptr = 0x0;
+    int ret = 0;
+    if (cond->real_ptr) {
+        ret = pthread_cond_destroy(cond->real_ptr);
+        free(cond->real_ptr);
+        cond->real_ptr = 0x0;
+    }
     return ret;
 }
 
@@ -443,14 +467,17 @@ int sem_post_soloader (int * uid) {
 }
 
 int sem_timedwait_soloader (int * uid, const struct timespec * abstime) {
+    // POSIX waits until the ABSOLUTE deadline; the old code returned -1
+    // immediately when the deadline was still in the future (inverted).
     uint timeout = 1000;
     if (sceKernelWaitSema(*uid, 1, &timeout) >= 0)
         return 0;
     if (!abstime) return -1;
     long long now = (long long) current_timestamp_ms() * 1000; // us
-    long long _timeout = abstime->tv_sec * 1000 * 1000 + abstime->tv_nsec / 1000; // us
-    if (_timeout-now >= 0) return -1;
-    uint timeout_real = _timeout - now;
+    long long end = (long long)abstime->tv_sec * 1000 * 1000 + abstime->tv_nsec / 1000; // us
+    long long rel = end - now;
+    if (rel <= 0) return -1; // deadline already passed: ETIMEDOUT
+    uint timeout_real = rel > 0x7fffffff ? 0x7fffffff : (uint)rel;
     if (sceKernelWaitSema(*uid, 1, &timeout_real) < 0)
         return -1;
     return 0;

@@ -149,6 +149,50 @@ void glCompileShader_soloader(GLuint shader) {
 #endif
 }
 
+void glGetActiveAttrib_soloader(GLuint program, GLuint index, GLsizei buf_size,
+                                 GLsizei *length, GLint *size, GLenum *type,
+                                 GLchar *name) {
+    if (length) *length = 0;
+    if (size) *size = 0;
+    if (type) *type = 0;
+    if (name && buf_size > 0) name[0] = '\0';
+    glGetActiveAttrib(program, index, buf_size, length, size, type, name);
+    l_info("glGetActiveAttrib(program=%u, index=%u): length=%d size=%d type=0x%x name=\"%s\" from %p",
+           (unsigned int)program, (unsigned int)index, length ? (int)*length : 0,
+           size ? (int)*size : 0, type ? (unsigned int)*type : 0,
+           name ? name : "", __builtin_return_address(0));
+}
+
+void glGetActiveUniform_soloader(GLuint program, GLuint index, GLsizei buf_size,
+                                  GLsizei *length, GLint *size, GLenum *type,
+                                  GLchar *name) {
+    if (length) *length = 0;
+    if (size) *size = 0;
+    if (type) *type = 0;
+    if (name && buf_size > 0) name[0] = '\0';
+    glGetActiveUniform(program, index, buf_size, length, size, type, name);
+    l_info("glGetActiveUniform(program=%u, index=%u): length=%d size=%d type=0x%x name=\"%s\" from %p",
+           (unsigned int)program, (unsigned int)index, length ? (int)*length : 0,
+           size ? (int)*size : 0, type ? (unsigned int)*type : 0,
+           name ? name : "", __builtin_return_address(0));
+}
+
+void glGetShaderiv_soloader(GLuint shader, GLenum pname, GLint *params) {
+    if (params) *params = 0;
+    glGetShaderiv(shader, pname, params);
+    l_info("glGetShaderiv(shader=%u, pname=0x%x): %d from %p",
+           (unsigned int)shader, (unsigned int)pname, params ? *params : 0,
+           __builtin_return_address(0));
+}
+
+void glGetProgramiv_soloader(GLuint program, GLenum pname, GLint *params) {
+    if (params) *params = 0;
+    glGetProgramiv(program, pname, params);
+    l_info("glGetProgramiv(program=%u, pname=0x%x): %d from %p",
+           (unsigned int)program, (unsigned int)pname, params ? *params : 0,
+           __builtin_return_address(0));
+}
+
 void glGetShaderPrecisionFormat_soloader(GLenum shader_type, GLenum precision_type,
                                          GLint *range, GLint *precision) {
     (void)shader_type;
@@ -160,6 +204,148 @@ void glGetShaderPrecisionFormat_soloader(GLenum shader_type, GLenum precision_ty
     if (precision) {
         *precision = 23;
     }
+}
+
+// Diagnostic wrappers: log-only, same signatures as the real GL APIs.
+// They run before/after the real call without altering arguments or results.
+static unsigned int shader_source_trace_count;
+
+void glShaderSource_trace(GLuint shader, GLsizei count,
+                          const GLchar *const *string, const GLint *length) {
+    if (shader_source_trace_count < 32) {
+        char preview[129];
+        preview[0] = '\0';
+        if (count > 0 && string && string[0]) {
+            size_t avail;
+            if (length && length[0] >= 0)
+                avail = (size_t)length[0];
+            else
+                avail = strlen(string[0]);
+            if (avail > 128) avail = 128;
+            memcpy(preview, string[0], avail);
+            preview[avail] = '\0';
+        }
+        l_warn("shader source: id=%u count=%d lengths=%p first_len=%d text=%.128s",
+               (unsigned int)shader, (int)count, length,
+               (count > 0 && length) ? (int)length[0] : -1, preview);
+        shader_source_trace_count++;
+    }
+    glShaderSource(shader, count, string, length);
+}
+
+GLuint glCreateShader_trace(GLenum type) {
+    GLuint shader = glCreateShader(type);
+    l_info("glCreateShader(type=0x%x): %u from %p",
+           (unsigned int)type, (unsigned int)shader,
+           __builtin_return_address(0));
+    return shader;
+}
+
+void glCompileShader_trace(GLuint shader) {
+    l_info("glCompileShader(shader=%u) from %p",
+           (unsigned int)shader, __builtin_return_address(0));
+    glCompileShader(shader);
+    GLint status = 0;
+    glGetShaderiv(shader, GL_COMPILE_STATUS, &status);
+    l_info("glCompileShader(shader=%u): compile_status=%d",
+           (unsigned int)shader, (int)status);
+    if (status == 0) {
+        char log[512];
+        GLsizei len = 0;
+        log[0] = '\0';
+        glGetShaderInfoLog(shader, sizeof(log), &len, log);
+        if (len < 0 || len >= (GLsizei)sizeof(log))
+            len = (GLsizei)sizeof(log) - 1;
+        log[len] = '\0';
+        l_error("compile-fail shader %u: %s", (unsigned int)shader, log);
+    }
+}
+void glTexImage2D_soloader(GLenum target, GLint level, GLint internalformat,
+                           GLsizei width, GLsizei height, GLint border,
+                           GLenum format, GLenum type, const GLvoid *pixels) {
+    l_info("glTexImage2D(target=0x%x, level=%d, internal=0x%x, %dx%d, border=%d, format=0x%x, type=0x%x, pixels=%p) from %p",
+           (unsigned int)target, (int)level, (int)internalformat,
+           (int)width, (int)height, (int)border, (unsigned int)format,
+           (unsigned int)type, pixels, __builtin_return_address(0));
+    glTexImage2D(target, level, internalformat, width, height, border,
+                 format, type, pixels);
+}
+
+void glTexSubImage2D_soloader(GLenum target, GLint level, GLint xoffset,
+                              GLint yoffset, GLsizei width, GLsizei height,
+                              GLenum format, GLenum type,
+                              const GLvoid *pixels) {
+    l_info("glTexSubImage2D(target=0x%x, level=%d, off=(%d,%d), %dx%d, format=0x%x, type=0x%x, pixels=%p) from %p",
+           (unsigned int)target, (int)level, (int)xoffset, (int)yoffset,
+           (int)width, (int)height, (unsigned int)format,
+           (unsigned int)type, pixels, __builtin_return_address(0));
+    glTexSubImage2D(target, level, xoffset, yoffset, width, height,
+                    format, type, pixels);
+}
+
+void glPixelStorei_soloader(GLenum pname, GLint param) {
+    l_info("glPixelStorei(pname=0x%x, param=%d) from %p",
+           (unsigned int)pname, (int)param, __builtin_return_address(0));
+    glPixelStorei(pname, param);
+}
+
+const GLubyte *glGetString_soloader(GLenum name) {
+    const GLubyte *ret = glGetString(name);
+    l_info("glGetString(name=0x%x): \"%s\" from %p",
+           (unsigned int)name, ret ? (const char *)ret : "(null)",
+           __builtin_return_address(0));
+    return ret;
+}
+
+// Diagnostic: when a program fails to link, dump the attached shader
+// sources so the failing GLSL can be identified from boot.log.
+void glLinkProgram_soloader(GLuint program) {
+    l_info("glLinkProgram(program=%u) from %p",
+           (unsigned int)program, __builtin_return_address(0));
+    glLinkProgram(program);
+    GLint status = 0;
+    glGetProgramiv(program, GL_LINK_STATUS, &status);
+    l_info("glLinkProgram(program=%u): link_status=%d",
+           (unsigned int)program, (int)status);
+    if (status == 0) {
+        GLuint shaders[8] = {0};
+        GLsizei count = 0;
+        glGetAttachedShaders(program, 8, &count, shaders);
+        l_error("glLinkProgram(program=%u): FAILED with %d attached shaders",
+                (unsigned int)program, (int)count);
+        for (GLsizei i = 0; i < count && i < 8; i++) {
+            GLint src_len = 0;
+            glGetShaderiv(shaders[i], GL_SHADER_SOURCE_LENGTH, &src_len);
+            GLsizei dump_len = src_len > 2048 ? 2048 : src_len;
+            if (dump_len > 0) {
+                char *src = malloc((size_t)dump_len + 1);
+                if (src) {
+                    GLsizei copied = 0;
+                    glGetShaderSource(shaders[i], dump_len + 1, &copied,
+                                      src);
+                    if (copied < 0 || copied > dump_len)
+                        copied = dump_len;
+                    src[copied] = '\0';
+                    l_error("link-fail shader %u source (%d bytes): %s",
+                            (unsigned int)shaders[i], (int)copied, src);
+                    free(src);
+                }
+            } else {
+                l_error("link-fail shader %u: empty source (len=%d)",
+                        (unsigned int)shaders[i], (int)src_len);
+            }
+        }
+    }
+}
+
+void glGetProgramInfoLog_soloader(GLuint program, GLsizei max_length,
+                                  GLsizei *length, GLchar *info_log) {
+    if (length) *length = 0;
+    if (info_log && max_length > 0) info_log[0] = '\0';
+    glGetProgramInfoLog(program, max_length, length, info_log);
+    l_info("glGetProgramInfoLog(program=%u): length=%d log=\"%s\"",
+           (unsigned int)program, length ? (int)*length : 0,
+           info_log ? info_log : "");
 }
 
 #if defined(USE_GLSL_SHADERS) && defined(DUMP_COMPILED_SHADERS)

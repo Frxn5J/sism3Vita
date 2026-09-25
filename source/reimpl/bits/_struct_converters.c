@@ -64,10 +64,14 @@ SC_INLINE int oflags_bionic_to_newlib(int flags) {
  */
 SC_INLINE
 dirent64_bionic * dirent_newlib_to_bionic(const struct dirent* dirent_newlib) {
-    dirent64_bionic * ret = malloc(sizeof(dirent64_bionic));
-    strncpy(ret->d_name, dirent_newlib->d_name, sizeof(ret->d_name));
+    dirent64_bionic * ret = calloc(1, sizeof(dirent64_bionic));
+    strncpy(ret->d_name, dirent_newlib->d_name, sizeof(ret->d_name) - 1);
+    ret->d_name[sizeof(ret->d_name) - 1] = '\0';
+    // Vita's dirent carries a SceIoStat with no inode number; Bionic callers
+    // only need d_ino to be stable within a listing, so leave it zeroed.
+    ret->d_ino = 0;
     ret->d_off = 0;
-    ret->d_reclen = 0;
+    ret->d_reclen = sizeof(dirent64_bionic);
     ret->d_type = SCE_S_ISDIR(dirent_newlib->d_stat.st_mode) ? DT_DIR : DT_REG;
     return ret;
 }
@@ -79,6 +83,7 @@ dirent64_bionic * dirent_newlib_to_bionic(const struct dirent* dirent_newlib) {
  */
 SC_INLINE
 void stat_newlib_to_bionic(const struct stat * src, stat64_bionic * dst) {
+    memset(dst, 0, sizeof(*dst));
     dst->st_dev = src->st_dev;
     dst->__st_ino = src->st_ino;
     dst->st_ino = src->st_ino;

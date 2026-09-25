@@ -25,6 +25,11 @@ extern "C" {
 
 void *sceClibMemclr(void *dst, size_t len);
 
+void *malloc_soloader(size_t size);
+void *calloc_soloader(size_t nmemb, size_t size);
+void *realloc_soloader(void *ptr, size_t size);
+void *memalign_soloader(size_t alignment, size_t size);
+
 void *mmap(void *addr, size_t length, int prot, int flags, int fd, off_t offs);
 
 int munmap(void *addr, size_t length);

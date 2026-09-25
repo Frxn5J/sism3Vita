@@ -99,6 +99,7 @@ set(SOURCES
     source/java.c
     source/patch.c
     source/reimpl/bits/_ctype.c
+    source/reimpl/egl_ext.c
     source/reimpl/errno.c
     source/reimpl/io.c
     source/reimpl/log.c

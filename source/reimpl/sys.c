@@ -14,6 +14,10 @@
 #include <psp2/kernel/clib.h>
 #include <string.h>
 #include <stdint.h>
+#include <unistd.h>
+#include <poll.h>
+#include <sys/select.h>
+#include <sys/time.h>
 #include <psp2/kernel/processmgr.h>
 #include <psp2/rtc.h>
 #include <stdlib.h>
@@ -153,6 +157,37 @@ int getpagesize(void) {
     return PAGE_SIZE;
 }
 
+unsigned int sleep_soloader(unsigned int seconds) {
+    l_info("sleep(%u): from %p", seconds, __builtin_return_address(0));
+    return sleep(seconds);
+}
+
+int usleep_soloader(unsigned int usec) {
+    if (usec >= 500000)
+        l_info("usleep(%u): from %p", usec, __builtin_return_address(0));
+    return usleep(usec);
+}
+
+int nanosleep_soloader(const struct timespec *req, struct timespec *rem) {
+    if (req && (req->tv_sec > 0 || req->tv_nsec >= 500000000))
+        l_info("nanosleep(%lis+%lins): from %p", (long)req->tv_sec,
+               (long)req->tv_nsec, __builtin_return_address(0));
+    return nanosleep(req, rem);
+}
+
+int select_soloader(int nfds, void *readfds, void *writefds, void *exceptfds,
+                    struct timeval *timeout) {
+    l_info("select(%d, tout=%lis): from %p", nfds,
+           timeout ? (long)timeout->tv_sec : -1L, __builtin_return_address(0));
+    return select(nfds, readfds, writefds, exceptfds, timeout);
+}
+
+int poll_soloader(void *fds, unsigned long nfds, int timeout) {
+    l_info("poll(nfds=%lu, timeout=%d): from %p", nfds, timeout,
+           __builtin_return_address(0));
+    return poll(fds, nfds, timeout);
+}
+
 typedef struct CodeBlock {
 	void *base;
 	size_t size;
@@ -229,6 +264,9 @@ int mprotect_soloader(void *addr, size_t len, int prot) {
 		l_info("mprotect(%p, %zu, 0x%x): retaining dedicated code arena RWX", addr, len, prot);
 		return 0;
 	}
+	// Diagnostic: caller PC pinpoints which loader phase issues each mprotect.
+	l_info("mprotect(%p, %zu, 0x%x): requested from %p", addr, len, prot,
+	       __builtin_return_address(0));
 	int vita_prot = KU_KERNEL_PROT_NONE;
 	if (prot & 1) vita_prot |= KU_KERNEL_PROT_READ;
 	if (prot & 2) vita_prot |= KU_KERNEL_PROT_WRITE;

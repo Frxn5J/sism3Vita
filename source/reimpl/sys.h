@@ -55,6 +55,14 @@ int setenv_soloader(const char * name, const char * value, int overwrite);
 
 int getpagesize(void);
 
+// Diagnostic wrappers: log every sleep/wait so silent 5s gaps are visible.
+unsigned int sleep_soloader(unsigned int seconds);
+int usleep_soloader(unsigned int usec);
+int nanosleep_soloader(const struct timespec *req, struct timespec *rem);
+int select_soloader(int nfds, void *readfds, void *writefds, void *exceptfds,
+                    struct timeval *timeout);
+int poll_soloader(void *fds, unsigned long nfds, int timeout);
+
 int mprotect_soloader(void *addr, size_t len, int prot);
 void *marmalade_code_alloc(size_t len);
 void marmalade_code_free(void *addr);

@@ -40,15 +40,17 @@ AAssetManager * AAssetManager_create() {
 AAsset* AAssetManager_open(AAssetManager* mgr, const char* filename, int mode) {
     std::string realp = std::string(DATA_PATH) + std::string("assets/") + std::string(filename);
 
-    auto * a = new aAsset;
+    auto * a = new aAsset();
     a->filename = (char *) malloc(realp.length() + 1);
     strcpy(a->filename, realp.c_str());
     a->bytesRead = 0;
+    a->fileSize = 0;
+    a->f = nullptr;
 
 #ifdef USE_SCELIBC_IO
-    a->f = sceLibcBridge_fopen((const char *)a->filename, "r");
+    a->f = sceLibcBridge_fopen((const char *)a->filename, "rb");
 #else
-    a->f = fopen((cost char *)a->filename, "r");
+    a->f = fopen((const char *)a->filename, "rb");
 #endif
 
     if (!a->f) {
@@ -138,12 +140,18 @@ off_t AAsset_seek(AAsset* asset, off_t offset, int whence) {
     }
 
 #ifdef USE_SCELIBC_IO
-    auto ret = (off_t) sceLibcBridge_fseek(a->f, offset, whence);
+    if (sceLibcBridge_fseek(a->f, offset, whence) != 0)
+        return -1;
+    off_t position = (off_t)sceLibcBridge_ftell(a->f);
 #else
-    auto ret = (off_t) fseek(a->f, offset, whence);
+    if (fseek(a->f, offset, whence) != 0)
+        return -1;
+    off_t position = (off_t)ftell(a->f);
 #endif
-
-    return ret;
+    if (position < 0)
+        return -1;
+    a->bytesRead = (size_t)position;
+    return position;
 }
 
 off_t AAsset_getRemainingLength(AAsset* asset) {

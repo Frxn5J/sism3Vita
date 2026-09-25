@@ -13,6 +13,8 @@
 #ifndef SOLOADER_LOGGER_H
 #define SOLOADER_LOGGER_H
 
+#include <stddef.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -44,6 +46,13 @@ extern "C" {
 
 void _log_print(int t, const char* fmt, ...)
                 __attribute__ ((format (printf, 2, 3)));
+
+#define LOGGER_OVERLAY_LINES 6
+#define LOGGER_OVERLAY_LINE_SIZE 96
+
+// Copies the most recent non-debug messages for the in-game diagnostic view.
+size_t logger_overlay_snapshot(char lines[LOGGER_OVERLAY_LINES][LOGGER_OVERLAY_LINE_SIZE],
+                               size_t max_lines);
 
 #ifdef __cplusplus
 };

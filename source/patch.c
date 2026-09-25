@@ -13,6 +13,7 @@
 
 #include <kubridge.h>
 #include <so_util/so_util.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #include <vitasdk.h>
@@ -30,6 +31,11 @@ extern "C"
 #define MARMALADE_CACHEFLUSH_OFFSET       0x2d844
 #define MARMALADE_CODE_ALLOC_OFFSET       0x4f9c8
 #define MARMALADE_CODE_FREE_OFFSET        0x4f234
+#define MARMALADE_MALLOC_BASE_OFFSET      0x5022c
+#define MARMALADE_DEVICE_EXIT_OFFSET      0x41ce0
+#define MARMALADE_DEVICE_REQ_QUIT_OFFSET  0x42c7c
+#define MARMALADE_S3E_FILE_OPEN_CORE_OFFSET 0x493e8
+#define MALLOC_TRACE_THRESHOLD            (64u * 1024u * 1024u)
 
 #include "utils/logger.h"
 #include "utils/dialog.h"
@@ -80,13 +86,114 @@ static void marmalade_cacheflush(void *start, size_t length) {
 	    length > UINTPTR_MAX - (uintptr_t)start - 31)
 		fatal_error("Invalid Marmalade cache range: %p + 0x%x", start, length);
 	kuKernelFlushCaches(start, length);
-	l_info("Marmalade code caches synchronized: %p + 0x%x", start, length);
+	l_info("Marmalade code caches synchronized: %p + 0x%x from %p", start,
+	       length, __builtin_return_address(0));
+}
+
+static so_hook s3e_malloc_hook;
+static so_hook s3e_device_exit_hook;
+static so_hook s3e_device_req_quit_hook;
+static so_hook s3e_file_check_exists_hook;
+static so_hook s3e_decomp_init_hook;
+static so_hook s3e_file_open_core_hook;
+
+static void *s3e_malloc_traced(size_t size) {
+	// Diagnostic: capture the direct caller of the deterministic ~3.8 GB
+	// s3eMalloc request seen after the splash shaders compile.
+	if (size >= MALLOC_TRACE_THRESHOLD) {
+		// Marmalade switches stacks before invoking callbacks. r4 retains the
+		// original stack pointer, whose saved LR identifies the real game code
+		// caller instead of the generic stack-switch trampoline.
+		uintptr_t original_sp;
+		__asm__ volatile ("mov %0, r4" : "=r"(original_sp));
+		uintptr_t original_lr = 0;
+		if (original_sp >= 0x80000000u && original_sp < 0x9a000000u)
+			original_lr = *(uintptr_t *)(original_sp + sizeof(uintptr_t));
+		l_error("s3eMallocBase(%u): huge request, trampoline=%p game_lr=%p sp=%p",
+		        (unsigned int)size, __builtin_return_address(0),
+		        (void *)original_lr, (void *)original_sp);
+		if (original_sp >= 0x80000000u &&
+		    original_sp <= 0x9a000000u - 32 * sizeof(uintptr_t)) {
+			const uint32_t *stack = (const uint32_t *)original_sp;
+			l_error("s3eMallocBase stack[0]: %08x %08x %08x %08x %08x %08x %08x %08x",
+			        stack[0], stack[1], stack[2], stack[3], stack[4], stack[5],
+			        stack[6], stack[7]);
+			l_error("s3eMallocBase stack[8]: %08x %08x %08x %08x %08x %08x %08x %08x",
+			        stack[8], stack[9], stack[10], stack[11], stack[12], stack[13],
+			        stack[14], stack[15]);
+			l_error("s3eMallocBase stack[16]: %08x %08x %08x %08x %08x %08x %08x %08x",
+			        stack[16], stack[17], stack[18], stack[19], stack[20], stack[21],
+			        stack[22], stack[23]);
+			l_error("s3eMallocBase stack[24]: %08x %08x %08x %08x %08x %08x %08x %08x",
+			        stack[24], stack[25], stack[26], stack[27], stack[28], stack[29],
+			        stack[30], stack[31]);
+		}
+	}
+	return SO_CONTINUE(void *, s3e_malloc_hook, size);
+}
+
+static void s3e_device_exit_traced(void) {
+	// Diagnostic: who asks the device to exit, and from where.
+	l_error("s3eDeviceExit: requested from %p", __builtin_return_address(0));
+	SO_CONTINUE(int, s3e_device_exit_hook);
+}
+
+static void s3e_device_req_quit_traced(void) {
+	// Diagnostic: the game loop quits when this flag is set.
+	l_error("s3eDeviceRequestQuit: requested from %p", __builtin_return_address(0));
+	SO_CONTINUE(int, s3e_device_req_quit_hook);
+}
+
+static int s3e_file_check_exists_traced(void *out, const char *name, int flag) {
+	// Diagnostic: this gate prints "Can't open s3e file" on zero return.
+	l_info("s3eFileCheckExists(out=%p, name=\"%s\", flag=%d): from %p", out,
+	       name ? name : "(null)", flag, __builtin_return_address(0));
+	int ret = SO_CONTINUE(int, s3e_file_check_exists_hook, out, name, flag);
+	l_info("s3eFileCheckExists(\"%s\"): -> %d", name ? name : "(null)", ret);
+	return ret;
+}
+
+static int s3e_decomp_init_traced(int a, void *b, void *c) {
+	// Diagnostic: zero return here prints "Error reading s3e file".
+	l_info("s3eCompressionDecompInit(%d, %p, %p): from %p", a, b, c,
+	       __builtin_return_address(0));
+	int ret = SO_CONTINUE(int, s3e_decomp_init_hook, a, b, c);
+	l_info("s3eCompressionDecompInit: -> %d", ret);
+	return ret;
+}
+
+static void *s3e_file_open_core_traced(const char *path, const char *mode,
+                                       int provider) {
+	bool is_s3e = path && strstr(path, ".s3e");
+	if (is_s3e) {
+		l_info("s3eFileOpenCore(path=\"%s\", mode=\"%s\", provider=%d)",
+		       path, mode ? mode : "(null)", provider);
+	}
+	void *ret = SO_CONTINUE(void *, s3e_file_open_core_hook, path, mode, provider);
+	if (!ret && is_s3e && provider == 1) {
+		// The Android asset provider rejects Vita's absolute path after it has
+		// already enumerated the external asset directory. Provider 0 accepts
+		// this same file by basename (as seen during the first loader pass).
+		const char *basename = strrchr(path, '/');
+		if (basename && basename[1]) {
+			basename++;
+			l_warn("s3eFileOpenCore: retrying provider 1 failure as provider 0: \"%s\"",
+			       basename);
+			ret = SO_CONTINUE(void *, s3e_file_open_core_hook, basename, mode, 0);
+		}
+	}
+	if (is_s3e)
+		l_info("s3eFileOpenCore(\"%s\"): -> %p", path, ret);
+	return ret;
 }
 
 void so_patch(void) {
 	if (*(uint16_t *)(so_mod.load_addr + MARMALADE_CACHEFLUSH_OFFSET) != 0xb590 ||
 	    *(uint16_t *)(so_mod.load_addr + MARMALADE_CODE_ALLOC_OFFSET) != 0xb538 ||
-	    *(uint16_t *)(so_mod.load_addr + MARMALADE_CODE_FREE_OFFSET) != 0xb508)
+	    *(uint16_t *)(so_mod.load_addr + MARMALADE_CODE_FREE_OFFSET) != 0xb508 ||
+	    *(uint16_t *)(so_mod.load_addr + MARMALADE_MALLOC_BASE_OFFSET) != 0xb5f0 ||
+	    *(uint16_t *)(so_mod.load_addr + MARMALADE_DEVICE_EXIT_OFFSET) != 0xb508 ||
+	    *(uint16_t *)(so_mod.load_addr + MARMALADE_DEVICE_REQ_QUIT_OFFSET) != 0xb510)
 		fatal_error("Unsupported Marmalade library: code hook signatures differ.");
 	kuser_patch();
 	// The Android library contains __clear_cache(), which invokes the
@@ -98,6 +205,24 @@ void so_patch(void) {
 	          (uintptr_t)marmalade_code_alloc);
 	hook_addr(so_mod.load_addr + MARMALADE_CODE_FREE_OFFSET + 1,
 	          (uintptr_t)marmalade_code_free);
+	// Trace the origin of huge heap requests (diagnostic, see s3e_malloc_traced).
+	s3e_malloc_hook = hook_addr(so_mod.load_addr + MARMALADE_MALLOC_BASE_OFFSET + 1,
+	                            (uintptr_t)s3e_malloc_traced);
+	// Trace who asks the device to quit/exit (diagnostic).
+	s3e_device_exit_hook = hook_addr(so_mod.load_addr + MARMALADE_DEVICE_EXIT_OFFSET + 1,
+	                                 (uintptr_t)s3e_device_exit_traced);
+	s3e_device_req_quit_hook = hook_addr(so_mod.load_addr + MARMALADE_DEVICE_REQ_QUIT_OFFSET + 1,
+	                                     (uintptr_t)s3e_device_req_quit_traced);
+	// NOTE: s3eFileCheckExists/s3eCompressionDecompInit hooks removed: the
+	// guessed 3-arg signature smashed the stack and crashed early init.
+	// Re-add only with pointer-only logging after verifying the ABI.
+	(void)s3e_file_check_exists_hook;
+	(void)s3e_decomp_init_hook;
+	if (*(uint16_t *)(so_mod.load_addr + MARMALADE_S3E_FILE_OPEN_CORE_OFFSET) != 0xb5f0)
+		fatal_error("Unsupported Marmalade s3e file-open helper.");
+	s3e_file_open_core_hook = hook_addr(
+		so_mod.load_addr + MARMALADE_S3E_FILE_OPEN_CORE_OFFSET + 1,
+		(uintptr_t)s3e_file_open_core_traced);
 	// Sample hook with symbol name
 	// hook_addr((uintptr_t)so_symbol(&so_mod, "_ZN6glitch2os7Printer5printEPKcz"), (uintptr_t)&hookedFunction);
 	// Or with offset
