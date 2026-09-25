@@ -29,6 +29,8 @@ so_module so_mod;
 #define MARMALADE_SET_VIEW_NATIVE_OFFSET 0x2dc81
 #define MARMALADE_SET_PIXELS_NATIVE_OFFSET 0x2dae9
 #define MARMALADE_RUN_NATIVE_OFFSET      0x2ddd1
+#define MARMALADE_MOTION_EVENT_OFFSET    0x30d89 // LoaderThread.onMotionEvent
+#define MARMALADE_KEY_EVENT_OFFSET       0x309a5 // onKeyEventNative
 #define PACKAGE_RESOURCE_PATH            DATA_PATH "The-Sims-3_1.5.21.apk"
 #define MARMALADE_FILE_ROOT              DATA_PATH "assets/"
 
@@ -40,6 +42,22 @@ typedef void (*marmalade_set_pixels_native_fn)(JNIEnv *env, jobject loader_view,
                                               jintArray pixels);
 typedef void (*marmalade_run_native_fn)(JNIEnv *env, jobject loader_thread,
                                         jstring file_root, jstring package_path);
+typedef void (*marmalade_motion_event_fn)(JNIEnv *env, jobject loader_thread,
+                                          jint pointer_id, jint action,
+                                          jint x, jint y);
+typedef jboolean (*marmalade_key_event_fn)(JNIEnv *env, jobject loader_view,
+                                           jint keycode, jint unicode_char,
+                                           jint pressed);
+
+// onMotionEvent actions sent by LoaderView on multitouch devices. They also
+// raise Marmalade's single-pointer events. 1-3 are the single-touch variants.
+#define MARMALADE_TOUCH_DOWN 4
+#define MARMALADE_TOUCH_UP   5
+#define MARMALADE_TOUCH_MOVE 6
+
+// Set once main() has resolved them; the controls thread starts earlier.
+static marmalade_motion_event_fn volatile motion_event;
+static marmalade_key_event_fn volatile key_event;
 
 static uintptr_t marmalade_entry(uintptr_t offset) {
     uintptr_t text_offset = so_mod.text_base - so_mod.load_addr;
@@ -103,9 +121,17 @@ int main() {
     marmalade_check_native("setViewNative", (uintptr_t)set_view_native);
     marmalade_check_native("setPixelsNative", (uintptr_t)set_pixels_native);
     marmalade_check_native("runNative", (uintptr_t)run_native);
+    marmalade_check_native("onKeyEventNative",
+                           marmalade_entry(MARMALADE_KEY_EVENT_OFFSET));
 
-    jobject loader_thread = (jobject)0x42424242;
-    jobject loader_view = (jobject)0x69696969;
+    // Marmalade drops input until its device layer is up, so these can be
+    // live before runNative. onMotionEvent is also registered by s3eTouchpad,
+    // which makes a by-name lookup ambiguous.
+    motion_event = (void *)marmalade_entry(MARMALADE_MOTION_EVENT_OFFSET);
+    key_event = (void *)marmalade_entry(MARMALADE_KEY_EVENT_OFFSET);
+
+    jobject loader_thread = JAVA_LOADER_THREAD;
+    jobject loader_view = JAVA_LOADER_VIEW;
 
     if (!file_exists(PACKAGE_RESOURCE_PATH)) {
         fatal_error("The original APK is required at:\n%s", PACKAGE_RESOURCE_PATH);
@@ -175,14 +201,29 @@ int main() {
 
 #ifndef NDK_PORT
 void controls_handler_key(int32_t keycode, ControlsAction action) {
-    // Call into the .so here
+    marmalade_key_event_fn fn = key_event;
+    if (!fn)
+        return;
+    // Arguments are (keycode, unicode char, pressed); a zero char means a
+    // plain key event with no text input.
+    fn(&jni, JAVA_LOADER_VIEW, keycode, 0,
+       action == CONTROLS_ACTION_DOWN ? 1 : 0);
 }
 
 void controls_handler_touch(int32_t id, float x, float y, ControlsAction action) {
-    // Call into the .so here
+    marmalade_motion_event_fn fn = motion_event;
+    if (!fn)
+        return;
+    jint marmalade_action = MARMALADE_TOUCH_MOVE;
+    if (action == CONTROLS_ACTION_DOWN)
+        marmalade_action = MARMALADE_TOUCH_DOWN;
+    else if (action == CONTROLS_ACTION_UP)
+        marmalade_action = MARMALADE_TOUCH_UP;
+    // x/y are already in the 960x544 surface space the game was given.
+    fn(&jni, JAVA_LOADER_THREAD, id, marmalade_action, (jint)x, (jint)y);
 }
 
 void controls_handler_analog(ControlsStickId which, float x, float y, ControlsAction action) {
-    // Call into the .so here
+    // This Marmalade loader has no analog stick native; the d-pad covers it.
 }
 #endif
