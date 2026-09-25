@@ -51,6 +51,35 @@ void glTexSubImage2D_soloader(GLenum target, GLint level, GLint xoffset,
 void glPixelStorei_soloader(GLenum pname, GLint param);
 const GLubyte *glGetString_soloader(GLenum name);
 void glLinkProgram_soloader(GLuint program);
+void glDeleteProgram_soloader(GLuint program);
+
+// Uniform locations handed to the game are compact per-program ids; these
+// wrappers translate them back to vitaGL locations.
+GLint glGetUniformLocation_soloader(GLuint program, const GLchar *name);
+void glUniform1f_soloader(GLint location, GLfloat v0);
+void glUniform1fv_soloader(GLint location, GLsizei count, const GLfloat *value);
+void glUniform1i_soloader(GLint location, GLint v0);
+void glUniform1iv_soloader(GLint location, GLsizei count, const GLint *value);
+void glUniform2f_soloader(GLint location, GLfloat v0, GLfloat v1);
+void glUniform2fv_soloader(GLint location, GLsizei count, const GLfloat *value);
+void glUniform2i_soloader(GLint location, GLint v0, GLint v1);
+void glUniform2iv_soloader(GLint location, GLsizei count, const GLint *value);
+void glUniform3f_soloader(GLint location, GLfloat v0, GLfloat v1, GLfloat v2);
+void glUniform3fv_soloader(GLint location, GLsizei count, const GLfloat *value);
+void glUniform3i_soloader(GLint location, GLint v0, GLint v1, GLint v2);
+void glUniform3iv_soloader(GLint location, GLsizei count, const GLint *value);
+void glUniform4f_soloader(GLint location, GLfloat v0, GLfloat v1, GLfloat v2,
+                          GLfloat v3);
+void glUniform4fv_soloader(GLint location, GLsizei count, const GLfloat *value);
+void glUniform4i_soloader(GLint location, GLint v0, GLint v1, GLint v2,
+                          GLint v3);
+void glUniform4iv_soloader(GLint location, GLsizei count, const GLint *value);
+void glUniformMatrix2fv_soloader(GLint location, GLsizei count,
+                                 GLboolean transpose, const GLfloat *value);
+void glUniformMatrix3fv_soloader(GLint location, GLsizei count,
+                                 GLboolean transpose, const GLfloat *value);
+void glUniformMatrix4fv_soloader(GLint location, GLsizei count,
+                                 GLboolean transpose, const GLfloat *value);
 void glShaderSource_trace(GLuint shader, GLsizei count,
                           const GLchar *const *string, const GLint *length);
 GLuint glCreateShader_trace(GLenum type);

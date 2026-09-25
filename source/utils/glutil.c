@@ -14,6 +14,7 @@
 #include "utils/logger.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <malloc.h>
 #include <string.h>
 #include <psp2/kernel/sysmem.h>
@@ -297,11 +298,198 @@ const GLubyte *glGetString_soloader(GLenum name) {
     return ret;
 }
 
+// vitaGL encodes a uniform location as the negated address of its internal
+// uniform record, so locations are huge numbers. Marmalade sizes its uniform
+// tables by the largest location it sees, which turned into a multi-GB
+// s3eMalloc after the splash shaders were linked. Give the game small
+// per-program ids (0, 1, 2...) like a desktop driver would, and translate them
+// back to vitaGL's value on every glUniform* call.
+#define UNIFORM_MAP_MAX_PROGRAMS 1024 // vitaGL's MAX_CUSTOM_PROGRAMS
+
+typedef struct {
+    GLint *locations; // vitaGL location for each compact id
+    GLint count;
+    GLint capacity;
+} UniformMap;
+
+static UniformMap uniform_maps[UNIFORM_MAP_MAX_PROGRAMS];
+static unsigned int uniform_unknown_warnings;
+
+static UniformMap *uniform_map_get(GLuint program) {
+    if (program == 0 || program > UNIFORM_MAP_MAX_PROGRAMS)
+        return NULL;
+    return &uniform_maps[program - 1];
+}
+
+static void uniform_map_reset(GLuint program) {
+    UniformMap *map = uniform_map_get(program);
+    if (!map)
+        return;
+    free(map->locations);
+    map->locations = NULL;
+    map->count = 0;
+    map->capacity = 0;
+}
+
+static GLint uniform_map_add(UniformMap *map, GLint location) {
+    for (GLint id = 0; id < map->count; id++) {
+        if (map->locations[id] == location)
+            return id;
+    }
+    if (map->count == map->capacity) {
+        GLint capacity = map->capacity ? map->capacity * 2 : 16;
+        GLint *locations = realloc(map->locations,
+                                   (size_t)capacity * sizeof(*locations));
+        if (!locations)
+            fatal_error("Could not grow the uniform location table.");
+        map->locations = locations;
+        map->capacity = capacity;
+    }
+    map->locations[map->count] = location;
+    return map->count++;
+}
+
+// Compact id of the current program -> vitaGL location (-1 is ignored by GL).
+static GLint uniform_location_resolve(GLint id) {
+    if (id < 0)
+        return -1;
+    GLint program = 0;
+    glGetIntegerv(GL_CURRENT_PROGRAM, &program);
+    UniformMap *map = uniform_map_get((GLuint)program);
+    if (!map || id >= map->count) {
+        if (uniform_unknown_warnings < 16) {
+            l_warn("glUniform*: unknown location %d for program %d",
+                   (int)id, (int)program);
+            uniform_unknown_warnings++;
+        }
+        return -1;
+    }
+    return map->locations[id];
+}
+
+GLint glGetUniformLocation_soloader(GLuint program, const GLchar *name) {
+    UniformMap *map = uniform_map_get(program);
+    if (!map || !name)
+        return -1;
+
+    GLint location = glGetUniformLocation(program, name);
+    size_t len = strlen(name);
+    if (location == -1 && len > 3 && len < 128 &&
+        !strcmp(name + len - 3, "[0]")) {
+        // GL treats "name[0]" as "name"; vitaGL only knows the base name.
+        char base[128];
+        memcpy(base, name, len - 3);
+        base[len - 3] = '\0';
+        location = glGetUniformLocation(program, base);
+    }
+    if (location == -1)
+        return -1;
+
+    GLint count = map->count;
+    GLint id = uniform_map_add(map, location);
+    if (id == count) {
+        l_info("glGetUniformLocation(program=%u, \"%s\"): id %d (vitaGL 0x%x)",
+               (unsigned int)program, name, (int)id, (unsigned int)location);
+    }
+    return id;
+}
+
+void glDeleteProgram_soloader(GLuint program) {
+    glDeleteProgram(program);
+    uniform_map_reset(program);
+}
+
+void glUniform1f_soloader(GLint location, GLfloat v0) {
+    glUniform1f(uniform_location_resolve(location), v0);
+}
+
+void glUniform1fv_soloader(GLint location, GLsizei count, const GLfloat *value) {
+    glUniform1fv(uniform_location_resolve(location), count, value);
+}
+
+void glUniform1i_soloader(GLint location, GLint v0) {
+    glUniform1i(uniform_location_resolve(location), v0);
+}
+
+void glUniform1iv_soloader(GLint location, GLsizei count, const GLint *value) {
+    glUniform1iv(uniform_location_resolve(location), count, value);
+}
+
+void glUniform2f_soloader(GLint location, GLfloat v0, GLfloat v1) {
+    glUniform2f(uniform_location_resolve(location), v0, v1);
+}
+
+void glUniform2fv_soloader(GLint location, GLsizei count, const GLfloat *value) {
+    glUniform2fv(uniform_location_resolve(location), count, value);
+}
+
+void glUniform2i_soloader(GLint location, GLint v0, GLint v1) {
+    glUniform2i(uniform_location_resolve(location), v0, v1);
+}
+
+void glUniform2iv_soloader(GLint location, GLsizei count, const GLint *value) {
+    glUniform2iv(uniform_location_resolve(location), count, value);
+}
+
+void glUniform3f_soloader(GLint location, GLfloat v0, GLfloat v1, GLfloat v2) {
+    glUniform3f(uniform_location_resolve(location), v0, v1, v2);
+}
+
+void glUniform3fv_soloader(GLint location, GLsizei count, const GLfloat *value) {
+    glUniform3fv(uniform_location_resolve(location), count, value);
+}
+
+void glUniform3i_soloader(GLint location, GLint v0, GLint v1, GLint v2) {
+    glUniform3i(uniform_location_resolve(location), v0, v1, v2);
+}
+
+void glUniform3iv_soloader(GLint location, GLsizei count, const GLint *value) {
+    glUniform3iv(uniform_location_resolve(location), count, value);
+}
+
+void glUniform4f_soloader(GLint location, GLfloat v0, GLfloat v1, GLfloat v2,
+                          GLfloat v3) {
+    glUniform4f(uniform_location_resolve(location), v0, v1, v2, v3);
+}
+
+void glUniform4fv_soloader(GLint location, GLsizei count, const GLfloat *value) {
+    glUniform4fv(uniform_location_resolve(location), count, value);
+}
+
+void glUniform4i_soloader(GLint location, GLint v0, GLint v1, GLint v2,
+                          GLint v3) {
+    glUniform4i(uniform_location_resolve(location), v0, v1, v2, v3);
+}
+
+void glUniform4iv_soloader(GLint location, GLsizei count, const GLint *value) {
+    glUniform4iv(uniform_location_resolve(location), count, value);
+}
+
+void glUniformMatrix2fv_soloader(GLint location, GLsizei count,
+                                 GLboolean transpose, const GLfloat *value) {
+    glUniformMatrix2fv(uniform_location_resolve(location), count, transpose,
+                       value);
+}
+
+void glUniformMatrix3fv_soloader(GLint location, GLsizei count,
+                                 GLboolean transpose, const GLfloat *value) {
+    glUniformMatrix3fv(uniform_location_resolve(location), count, transpose,
+                       value);
+}
+
+void glUniformMatrix4fv_soloader(GLint location, GLsizei count,
+                                 GLboolean transpose, const GLfloat *value) {
+    glUniformMatrix4fv(uniform_location_resolve(location), count, transpose,
+                       value);
+}
+
 // Diagnostic: when a program fails to link, dump the attached shader
 // sources so the failing GLSL can be identified from boot.log.
 void glLinkProgram_soloader(GLuint program) {
     l_info("glLinkProgram(program=%u) from %p",
            (unsigned int)program, __builtin_return_address(0));
+    // Relinking invalidates every uniform location of the program.
+    uniform_map_reset(program);
     glLinkProgram(program);
     GLint status = 0;
     glGetProgramiv(program, GL_LINK_STATUS, &status);
