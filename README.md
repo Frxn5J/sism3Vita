@@ -6,10 +6,13 @@ Experimental PlayStation Vita port based on `soloader-boilerplate`.
 
 - Target library: `libthesims3.so` (531164 bytes) from the ARM `armeabi` APK `The-Sims-3_1.5.21.apk`.
 - The library declares ARMv5T and uses the Marmalade `s3e` engine, so the port builds with VitaSDK-softfp.
-- All 160 imports of the library are resolved in `source/dynlib.c`.
+- All 159 imports of the library are resolved in `source/dynlib.c`.
 - Boot reaches `JNI_OnLoad` and Marmalade's `initNative`, `setPixelsNative`, `setViewNative` and `runNative`, and Marmalade's software surface is presented through `doDraw`.
 - The last known blocker is a deterministic ~3.8 GB `s3eMalloc`. Its cause is not confirmed; the code records three hypotheses: a uniform table sized by vitaGL's pointer-derived uniform locations (after the splash shaders link), relative asset paths that fail to open (`source/reimpl/io.c`), and the `res.dz` stream (`source/reimpl/mem.c`). `source/utils/glutil.c` now hands the game small per-program uniform ids, which addresses the first one. If the request still appears, `s3eMallocBase` in `boot.log` logs the calling game address (`game_lr`).
-- Input is not wired yet: the `controls_handler_*` functions in `source/main.c` are empty. Every native the game registers is logged as `RegisterNatives(...)` in the boot log, which gives the names, signatures and offsets needed to connect touch and buttons.
+- Touch goes to Marmalade's `onMotionEvent` and buttons to `onKeyEventNative`. Cross, Circle and Start send `DPAD_CENTER`, `BACK` and `MENU`, because this Marmalade build ignores `BUTTON_A`/`BUTTON_B`.
+- `runOnOSSignal` runs Marmalade's pending OS-thread call (`runOnOSTickNative`). Before, any synchronous `s3eEdkThreadRunOnOS` waited forever.
+- There is no video or music playback: `videoPlay` and `audioPlay` report failure, so the game does not wait for media that never ends. `showError` dialogs are logged.
+- See [`docs/libthesims3-notes.md`](docs/libthesims3-notes.md) for the verified offsets, natives and Java methods.
 - The Marmalade entry points and patches use offsets from this exact library. `source/patch.c` verifies the code signatures before hooking, and `source/main.c` cross-checks its entry offsets against the registered natives.
 - The proprietary APK, extracted library and game assets are intentionally not included.
 
