@@ -11,6 +11,10 @@
 #include "utils/logger.h"
 #include "utils/font_utils.h"
 
+#include <so_util/so_util.h>
+
+extern so_module so_mod;
+
 enum {
 	METHOD_GL_INIT = 1,
 	METHOD_GL_REINIT,
@@ -125,6 +129,61 @@ jintArray java_surface_init(jint width, jint height) {
 	l_info("Marmalade software surface allocated: %dx%d array=%p",
 	       width, height, (void *)pixels);
 	return pixels;
+}
+
+typedef struct {
+	char *name;
+	char *signature;
+	uintptr_t fn;
+} RegisteredNative;
+
+static RegisteredNative *registered_natives;
+static size_t registered_native_count;
+
+static jint java_register_natives(JNIEnv *env, jclass clazz,
+                                  const JNINativeMethod *methods, jint count) {
+	(void)env;
+	if (!methods || count <= 0)
+		return JNI_OK;
+
+	RegisteredNative *grown = realloc(registered_natives,
+		(registered_native_count + (size_t)count) * sizeof(*grown));
+	if (!grown)
+		fatal_error("Could not record %d registered natives.", count);
+	registered_natives = grown;
+
+	for (jint i = 0; i < count; i++) {
+		const char *name = methods[i].name ? methods[i].name : "";
+		const char *signature = methods[i].signature ? methods[i].signature : "";
+		uintptr_t fn = (uintptr_t)methods[i].fnPtr;
+		RegisteredNative *entry = &registered_natives[registered_native_count++];
+		entry->name = strdup(name);
+		entry->signature = strdup(signature);
+		entry->fn = fn;
+		if (!entry->name || !entry->signature)
+			fatal_error("Could not record registered native %s.", name);
+		l_info("RegisterNatives(%p): %s%s -> %p (offset 0x%x)", (void *)clazz,
+		       name, signature, (void *)fn,
+		       (unsigned int)(fn - so_mod.load_addr));
+	}
+	return JNI_OK;
+}
+
+void java_natives_hook(void) {
+	// jni points at FalsoJNI's heap-allocated table, so it is writable.
+	((struct JNINativeInterface *)jni)->RegisterNatives = java_register_natives;
+}
+
+uintptr_t java_native_lookup(const char *name) {
+	uintptr_t fn = 0;
+	for (size_t i = 0; i < registered_native_count; i++) {
+		if (strcmp(registered_natives[i].name, name) != 0)
+			continue;
+		if (fn && fn != registered_natives[i].fn)
+			return 0; // Same name on two classes: let the caller decide.
+		fn = registered_natives[i].fn;
+	}
+	return fn;
 }
 
 static void ensure_gl_initialized(void) {

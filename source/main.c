@@ -51,6 +51,19 @@ static uintptr_t marmalade_entry(uintptr_t offset) {
     return so_mod.load_addr + offset;
 }
 
+// The offsets above were taken from this exact libthesims3.so. If JNI_OnLoad
+// registered the same method by name, make sure both agree.
+static void marmalade_check_native(const char *name, uintptr_t entry) {
+    uintptr_t registered = java_native_lookup(name);
+    if (!registered) {
+        l_info("%s was not registered by name; using offset entry %p", name,
+               (void *)entry);
+    } else if (registered != entry) {
+        l_warn("%s is registered at %p but the offset entry is %p", name,
+               (void *)registered, (void *)entry);
+    }
+}
+
 
 int main() {
     soloader_init_all();
@@ -64,6 +77,7 @@ int main() {
 
     jint (*jni_on_load)(JavaVM *vm, void *reserved) =
         (void *)jni_on_load_address;
+    java_natives_hook();
     jint jni_version = jni_on_load(&jvm, NULL);
     if (jni_version < 0) {
         l_fatal("JNI_OnLoad failed: version=0x%x.", jni_version);
@@ -84,6 +98,10 @@ int main() {
     l_info("Marmalade entry points: init=0x%x view=0x%x run=0x%x",
            (unsigned int)init_native, (unsigned int)set_view_native,
            (unsigned int)run_native);
+    marmalade_check_native("initNative", (uintptr_t)init_native);
+    marmalade_check_native("setViewNative", (uintptr_t)set_view_native);
+    marmalade_check_native("setPixelsNative", (uintptr_t)set_pixels_native);
+    marmalade_check_native("runNative", (uintptr_t)run_native);
 
     jobject loader_thread = (jobject)0x42424242;
     jobject loader_view = (jobject)0x69696969;
