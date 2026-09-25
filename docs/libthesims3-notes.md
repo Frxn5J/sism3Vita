@@ -67,6 +67,26 @@ nothing; the useful ones are the Xperia Play set: `DPAD_*`, `DPAD_CENTER`
 (OK), `BACK`, `MENU`, `SEARCH`, `BUTTON_X/Y/L1/R1/START/SELECT`, letters,
 digits, `ENTER`, `DEL` and `SPACE`.
 
+## Sound
+
+`soundInit(stereo, 0)` is called by s3eSound's init (config key
+`SoundStereo` picks stereo, with a mono retry) and must return the output
+rate; 0 means failure. It also stores the mixer callback at 0x92548.
+`generateAudio(short[] buffer, int frames)` mixes `frames` frames and copies
+them with `SetShortArrayRegion`: `frames` shorts in mono, `2 * frames`
+interleaved in stereo. `soundSetVolume` receives 0-100.
+`source/reimpl/sound.c` answers 22050 Hz and pumps `generateAudio` into a
+BGM audio port from its own thread between `soundStart` and `soundStop`.
+
+## Text input
+
+`s3eOSReadString` (around 0x299a8) calls `getInputString(title, default,
+flags)` and then polls the string that `setInputText` stores (global
++0x194), yielding 20 ms per try until it is set or the app quits.
+`setInputText` copies the string with `GetStringUTFChars`, so it must never
+receive NULL. `java.c` shows the Vita IME from the calling (GL) thread and
+answers through `setInputText`, falling back to the default text on cancel.
+
 ## OS-thread calls
 
 `s3eEdkThreadRunOnOS` (around 0x5bc90) takes the lock at +0x52c, stores the
@@ -88,7 +108,8 @@ are implemented in `source/java.c`, the rest return 0/NULL through FalsoJNI.
   `audioResume`, `audioGetPosition`, `audioSetPosition`, `audioGetStatus`,
   `audioGetDuration`, `audioSetVolume`, `audioIsPlaying`,
   `audioGetNumChannels`, `soundInit(ZI)I`, `soundStart`, `soundStop`,
-  `soundSetVolume`. Sound output needs `generateAudio` to be pumped.
+  `soundSetVolume`. `soundInit` ✓, `soundStart` ✓, `soundStop` ✓ and
+  `soundSetVolume` ✓ drive `source/reimpl/sound.c`.
 - GL and loop: `glInit` ✓, `glReInit` ✓, `glTerm` ✓, `glSwapBuffers` ✓,
   `doDraw` ✓, `runRunnable` ✓, `runOnOSSignal` ✓, `runOnOSThread`,
   `deviceUnYield` ✓, `doResume` ✓, `doPause` ✓.
@@ -97,7 +118,8 @@ are implemented in `source/java.c`, the rest return 0/NULL through FalsoJNI.
   `getNetworkType/SubType` ✓, `getCardRoot` ✓, `getBatteryLevel` ✓,
   `chargerIsConnected` ✓, `networkCheckStart/Stop` ✓, `getLocale` ✓,
   `showError` ✓ (logged), `backlightOn`, `vibrateStart/Stop/Available`.
-- Text input: `getInputString`, `setShowOnScreenKeyboard`, `getKeyboardInfo`.
+- Text input: `getInputString` ✓ (Vita IME), `setShowOnScreenKeyboard`,
+  `getKeyboardInfo`.
 - Not relevant on Vita: `launchBrowser`, `sendEmail`, `contacts*`,
   `location*`, `record*`, `accel*`, `compass*`, `sms*`, `clipboardGet/Set`,
   `acquire/releaseMulticastLock`.

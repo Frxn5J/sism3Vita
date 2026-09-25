@@ -11,10 +11,23 @@ Experimental PlayStation Vita port based on `soloader-boilerplate`.
 - The last known blocker is a deterministic ~3.8 GB `s3eMalloc`. Its cause is not confirmed; the code records three hypotheses: a uniform table sized by vitaGL's pointer-derived uniform locations (after the splash shaders link), relative asset paths that fail to open (`source/reimpl/io.c`), and the `res.dz` stream (`source/reimpl/mem.c`). `source/utils/glutil.c` now hands the game small per-program uniform ids, which addresses the first one. If the request still appears, `s3eMallocBase` in `boot.log` logs the calling game address (`game_lr`).
 - Touch goes to Marmalade's `onMotionEvent` and buttons to `onKeyEventNative`. Cross, Circle and Start send `DPAD_CENTER`, `BACK` and `MENU`, because this Marmalade build ignores `BUTTON_A`/`BUTTON_B`.
 - `runOnOSSignal` runs Marmalade's pending OS-thread call (`runOnOSTickNative`). Before, any synchronous `s3eEdkThreadRunOnOS` waited forever.
-- There is no video or music playback: `videoPlay` and `audioPlay` report failure, so the game does not wait for media that never ends. `showError` dialogs are logged.
+- Sound effects: `soundInit`/`soundStart` feed Marmalade's `generateAudio` mixer into a 22050 Hz audio port (`source/reimpl/sound.c`). There is no video or streamed music playback: `videoPlay` and `audioPlay` report failure, so the game does not wait for media that never ends. `showError` dialogs are logged.
+- Text input (`s3eOSReadString`, e.g. naming a Sim) opens the Vita IME and answers through `setInputText`; before, the game polled forever.
+- An input thread polls touch and buttons at 60 Hz; the boilerplate never called `controls_poll()`.
 - See [`docs/libthesims3-notes.md`](docs/libthesims3-notes.md) for the verified offsets, natives and Java methods.
 - The Marmalade entry points and patches use offsets from this exact library. `source/patch.c` verifies the code signatures before hooking, and `source/main.c` cross-checks its entry offsets against the registered natives.
 - The proprietary APK, extracted library and game assets are intentionally not included.
+
+## Next Hardware Test
+
+Nothing since the Vita's last boot has run on hardware. On the next Debug run, check `ux0:data/thesims3/boot.log` for:
+
+- `RegisterNatives(...)` lines and no `is registered at ... but the offset entry is` warning.
+- `s3eMallocBase(...): huge request`: if it is still there, its `game_lr` points at the code computing the size.
+- `runOnOSSignal called` followed by the game moving on, instead of stopping there.
+- `showError:`, `videoPlay unsupported` and `audioPlay unsupported` lines.
+- `sound: 22050 Hz ...` once gameplay audio starts, and audible sound effects.
+- Touch and Cross/Circle/Start reaching the menus, and `getInputString(...)` opening the keyboard.
 
 ## Build
 
